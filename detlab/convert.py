@@ -16,9 +16,16 @@ def _single(queries, rule: LabRule) -> str:
     return queries[0]
 
 
+# A threshold rule becomes an EQL sequence. Elasticsearch only chains the events of a sequence
+# when it can put them in order. Events that share a timestamp (lines of an auth log within one
+# second, a burst within one millisecond) need a second field for that. A search without this
+# tiebreaker field misses such a burst.
+TIEBREAKER = "event.id"
+
+
 def _collection(rule: LabRule) -> SigmaCollection:
-    # Conversion changes the rule object, so each engine gets its own copy.
-    return SigmaCollection([copy.deepcopy(rule.rule)])
+    # Conversion changes the rule objects, so each engine gets its own copy.
+    return copy.deepcopy(rule.collection)
 
 
 def to_eql(rule: LabRule) -> str:

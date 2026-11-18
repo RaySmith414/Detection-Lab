@@ -6,7 +6,7 @@ from sigma.processing.conditions import LogsourceCondition
 from sigma.processing.pipeline import ProcessingItem, ProcessingPipeline
 from sigma.processing.transformations import AddConditionTransformation, FieldMappingTransformation
 
-from detlab.fields import FIELD_MAP, LOGSOURCES, flat
+from detlab.fields import FIELD_MAP, LOGSOURCES, SERVICES, flat
 
 
 def _build(name: str, rename: Callable[[str], str]) -> ProcessingPipeline:
@@ -17,6 +17,14 @@ def _build(name: str, rename: Callable[[str], str]) -> ProcessingPipeline:
             rule_conditions=[LogsourceCondition(product=product, category=category)],
         )
         for (product, category), conditions in LOGSOURCES.items()
+    ]
+    items += [
+        ProcessingItem(
+            identifier=f"lab_service_{product}_{service}",
+            transformation=AddConditionTransformation({rename(field): value for field, value in conditions.items()}),
+            rule_conditions=[LogsourceCondition(product=product, service=service)],
+        )
+        for (product, service), conditions in SERVICES.items()
     ]
     items.append(ProcessingItem(
         identifier="lab_field_mapping",

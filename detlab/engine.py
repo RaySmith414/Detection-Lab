@@ -5,13 +5,14 @@ so the matching logic is pySigma's, not a reimplementation.
 """
 
 import json
+import re
 import sqlite3
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
 from detlab.convert import to_sql
-from detlab.fields import FIELD_MAP, LOGSOURCES, flat
+from detlab.fields import flat, queried_fields
 from detlab.rules import LabRule
 
 
@@ -36,10 +37,15 @@ class SqliteEngine:
         rows = [flatten(event) for event in events]
         # Every field a rule can query gets a column, so a rule never meets an unknown column
         # when no sample carries the field. The Elasticsearch mapping does the same.
-        known = set(FIELD_MAP.values()) | {field for conditions in LOGSOURCES.values() for field in conditions}
-        columns = sorted({flat(name) for row in rows for name in row} | {flat(name) for name in known} | {"event_id"})
+        columns = sorted({flat(name) for row in rows for name in row} | {flat(name) for name in queried_fields()}
+                         | {"event_id"})
         self.connection = sqlite3.connect(":memory:")
-        # NOCASE: Sigma compares strings without regard to case, and so does the EQL the lab runs.
+        # Elasticsearch regular expressions must match the whole value and the lab runs them
+        # without regard to case. The test engine follows the same two rules.
+        self.connection.create_function(
+            "regexp", 2, lambda pattern, value: value is not None and
+            re.fullmatch(pattern, str(value), re.IGNORECASE) is not None, deterministic=True)
+        # NOCASE: Sigma compares strings without regard to case. So does the EQL the lab runs.
         quoted = ", ".join(f'"{column}" TEXT COLLATE NOCASE' for column in columns)
         self.connection.execute(f"CREATE TABLE logs ({quoted})")  # noqa: S608 - column names come from our own samples
         for row in rows:
@@ -49,6 +55,18 @@ class SqliteEngine:
             column_list = ", ".join(f'"{name}"' for name in names)
             self.connection.execute(f"INSERT INTO logs ({column_list}) VALUES ({marks})", values)  # noqa: S608
         self.columns = set(columns)
+
+    def groups(self, rule: LabRule) -> list[tuple[str, ...]]:
+        """For a threshold rule: the group-by values of every group that reached the threshold, sorted."""
+        try:
+            cursor = self.connection.execute(to_sql(rule))
+        except sqlite3.OperationalError as exc:
+            raise ValueError(f"{rule.key}: {exc}") from exc
+        column = [item[0] for item in cursor.description].index("group_keys")
+        found = set()
+        for row in cursor:
+            found.add(tuple(str(value) for value in json.loads(row[column]).values()))
+        return sorted(found)
 
     def matches(self, rule: LabRule) -> list[str]:
         """IDs (event.id) of the events the rule matches, sorted."""
@@ -64,6 +82,14 @@ def match_matrix(rules: Iterable[LabRule], events: list[dict[str, Any]]) -> dict
     engine = SqliteEngine(events)
     matrix: dict[str, list[str]] = {event["event"]["id"]: [] for event in events}
     for rule in rules:
+        if rule.is_threshold:
+            continue
         for event_id in engine.matches(rule):
             matrix[event_id].append(rule.key)
     return {event_id: sorted(keys) for event_id, keys in matrix.items()}
+
+
+def threshold_alerts(rules: Iterable[LabRule], events: list[dict[str, Any]]) -> dict[str, list[tuple[str, ...]]]:
+    """Threshold rule key -> the groups it raises an alert for. Every threshold rule has an entry."""
+    engine = SqliteEngine(events)
+    return {rule.key: engine.groups(rule) for rule in rules if rule.is_threshold}

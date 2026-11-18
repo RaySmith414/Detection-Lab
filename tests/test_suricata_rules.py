@@ -19,8 +19,8 @@ needs_suricata = pytest.mark.skipif(
 def test_rules_carry_the_lab_conventions(network_rules):
     assert len(network_rules) >= 10
     for rule in network_rules:
-        assert 9000001 <= rule.sid <= 9000099, rule.sid
-        assert rule.msg.startswith("DETLAB "), rule.sid
+        assert 1000001 <= rule.sid <= 1000099, rule.sid
+        assert rule.msg.startswith("DETECTION-LAB "), rule.sid
         assert rule.classtype, rule.sid
         assert rule.technique.startswith("T"), rule.sid
 
@@ -56,12 +56,12 @@ def test_the_whole_rule_file_passes():
 def test_reading_alerts_from_an_eve_file(tmp_path):
     eve = tmp_path / "eve.json"
     eve.write_text("\n".join(json.dumps(event) for event in [
-        {"event_type": "alert", "lab_capture": "one", "alert": {"signature_id": 9000002}},
-        {"event_type": "alert", "lab_capture": "one", "alert": {"signature_id": 9000001}},
-        {"event_type": "alert", "lab_capture": "one", "alert": {"signature_id": 9000001}},
+        {"event_type": "alert", "lab_capture": "one", "alert": {"signature_id": 1000021}},
+        {"event_type": "alert", "lab_capture": "one", "alert": {"signature_id": 1000020}},
+        {"event_type": "alert", "lab_capture": "one", "alert": {"signature_id": 1000020}},
         {"event_type": "flow", "lab_capture": "one"},
-        {"event_type": "alert", "lab_capture": "two", "alert": {"signature_id": 9000005}},
+        {"event_type": "alert", "lab_capture": "two", "alert": {"signature_id": 1000085}},
     ]) + "\n\n", encoding="utf-8")
     alerts = read_eve(eve)
     assert len(alerts) == 4
-    assert sids_by_capture(alerts) == {"one": [9000001, 9000002], "two": [9000005]}
+    assert sids_by_capture(alerts) == {"one": [1000020, 1000021], "two": [1000085]}

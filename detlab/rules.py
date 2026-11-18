@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from sigma.collection import SigmaCollection
+from sigma.correlations import SigmaCorrelationRule
 from sigma.rule import SigmaRule
 
 from detlab.attack import reference
@@ -18,9 +19,29 @@ TECHNIQUE = re.compile(r"^t\d{4}(\.\d{3})?$")
 
 @dataclass(frozen=True)
 class LabRule:
-    key: str                # file name without extension, used in expectations and reports
+    """One rule file. Most hold a single rule. A threshold rule file holds the rule it counts and the count."""
+
+    key: str                    # file name without extension, used in expectations and reports
     path: Path
-    rule: SigmaRule
+    collection: SigmaCollection
+
+    @property
+    def rule(self):
+        """The rule that raises the alert: the correlation rule of a threshold file, else the only rule."""
+        return self.collection.rules[-1]
+
+    @property
+    def base(self) -> SigmaRule:
+        """The rule that selects events. For a single rule that is the rule itself."""
+        return self.collection.rules[0]
+
+    @property
+    def is_threshold(self) -> bool:
+        return isinstance(self.rule, SigmaCorrelationRule)
+
+    @property
+    def group_by(self) -> list[str]:
+        return list(self.rule.group_by or []) if self.is_threshold else []
 
     @property
     def title(self) -> str:
@@ -32,11 +53,12 @@ class LabRule:
 
     @property
     def product(self) -> str:
-        return self.rule.logsource.product or ""
+        return self.base.logsource.product or ""
 
     @property
     def category(self) -> str:
-        return self.rule.logsource.category or ""
+        """The log source within the product: a Sigma category or a service such as the Security log."""
+        return self.base.logsource.category or self.base.logsource.service or ""
 
     @property
     def tactics(self) -> list[str]:
@@ -63,9 +85,10 @@ def load_rules() -> list[LabRule]:
     rules = []
     for path in sorted(SIGMA_DIR.rglob("*.yml")):
         collection = SigmaCollection.from_yaml(path.read_text(encoding="utf-8"))
-        if len(collection.rules) != 1:
-            raise ValueError(f"{path}: expected one rule per file")
-        rules.append(LabRule(path.stem, path, collection.rules[0]))
+        thresholds = [rule for rule in collection.rules if isinstance(rule, SigmaCorrelationRule)]
+        if len(collection.rules) != 1 and not (len(collection.rules) == 2 and thresholds == [collection.rules[-1]]):
+            raise ValueError(f"{path}: expected one rule or one rule followed by the threshold rule that counts it")
+        rules.append(LabRule(path.stem, path, collection))
     keys = [rule.key for rule in rules]
     if len(keys) != len(set(keys)):
         raise ValueError("two Sigma rule files share a name")

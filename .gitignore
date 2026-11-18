@@ -1,6 +1,7 @@
 # Secrets and local output of the stack
 stack/.env
 stack/output/
+stack/logs/
 
 # Python
 __pycache__/
