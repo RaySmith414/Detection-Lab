@@ -1,0 +1,27 @@
+title: SSH authorized_keys Written From the Command Line
+id: 4037157a-4100-44be-bb53-d21c84d7422e
+status: test
+description: Detects a command that adds a key to an authorized_keys file.
+references:
+    - https://attack.mitre.org/techniques/T1098/004/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.persistence
+    - attack.t1098.004
+logsource:
+    category: process_creation
+    product: linux
+detection:
+    selection_file:
+        CommandLine|contains: 'authorized_keys'
+    selection_write:
+        CommandLine|contains:
+            - '>>'
+            - '> /'
+            - '> ~'
+            - 'tee '
+    condition: all of selection_*
+falsepositives:
+    - Provisioning scripts that install keys for new users
+level: medium

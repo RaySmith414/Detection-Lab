@@ -1,0 +1,34 @@
+title: Service Created From a User-Writable Path
+id: 9d18fbf3-dcfb-462b-b786-0b9f5f2f99bd
+status: test
+description: Detects sc.exe creating a service whose binary sits in a user-writable folder or is a command interpreter.
+references:
+    - https://attack.mitre.org/techniques/T1543/003/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.persistence
+    - attack.privilege-escalation
+    - attack.t1543.003
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection_img:
+        Image|endswith: '\sc.exe'
+    selection_create:
+        CommandLine|contains|all:
+            - 'create'
+            - 'binPath'
+    selection_path:
+        CommandLine|contains:
+            - '\AppData\'
+            - '\Users\Public\'
+            - '\Temp\'
+            - 'cmd /c'
+            - 'cmd.exe /c'
+            - 'powershell'
+    condition: all of selection_*
+falsepositives:
+    - Unlikely for production services
+level: high

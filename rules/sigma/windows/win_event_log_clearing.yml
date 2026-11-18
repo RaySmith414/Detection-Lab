@@ -1,0 +1,31 @@
+title: Windows Event Log Cleared
+id: 95343c97-8d4a-4284-935e-5b7b124ffc2d
+status: test
+description: Detects wevtutil or PowerShell clearing an event log.
+references:
+    - https://attack.mitre.org/techniques/T1685/005/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.defense-impairment
+    - attack.t1685.005
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection_wevtutil:
+        Image|endswith: '\wevtutil.exe'
+        CommandLine|contains:
+            - ' cl '
+            - ' clear-log '
+    selection_powershell:
+        Image|endswith:
+            - '\powershell.exe'
+            - '\pwsh.exe'
+        CommandLine|contains:
+            - 'Clear-EventLog'
+            - 'Remove-EventLog'
+    condition: 1 of selection_*
+falsepositives:
+    - Lab resets and imaging scripts
+level: high

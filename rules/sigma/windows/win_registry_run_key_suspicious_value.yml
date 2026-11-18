@@ -1,0 +1,33 @@
+title: Run Key Pointing at a Suspicious Location
+id: 056d2007-ee89-46fe-bcad-a99a133d33bc
+status: test
+description: Detects a Run or RunOnce registry value that starts a program from a user-writable folder or a script host.
+references:
+    - https://attack.mitre.org/techniques/T1547/001/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.persistence
+    - attack.privilege-escalation
+    - attack.t1547.001
+logsource:
+    category: registry_set
+    product: windows
+detection:
+    selection_key:
+        TargetObject|contains: '\CurrentVersion\Run'
+    selection_value:
+        Details|contains:
+            - '\AppData\Local\Temp\'
+            - '\Users\Public\'
+            - '\Windows\Temp\'
+            - 'powershell'
+            - 'mshta'
+            - 'wscript'
+            - 'cscript'
+            - 'rundll32'
+            - 'regsvr32'
+    condition: all of selection_*
+falsepositives:
+    - Applications that start a helper through rundll32
+level: medium

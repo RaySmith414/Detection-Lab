@@ -1,0 +1,26 @@
+title: Rundll32 Running Script Through a Protocol Handler
+id: 04218178-9c68-4b4f-a5ad-fb71d2ae442a
+status: test
+description: Detects rundll32.exe used to run JavaScript or VBScript through mshtml.
+references:
+    - https://attack.mitre.org/techniques/T1218/011/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.stealth
+    - attack.t1218.011
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection_img:
+        Image|endswith: '\rundll32.exe'
+    selection_script:
+        CommandLine|contains:
+            - 'javascript:'
+            - 'vbscript:'
+            - 'RunHTMLApplication'
+    condition: all of selection_*
+falsepositives:
+    - Unlikely
+level: high

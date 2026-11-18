@@ -1,0 +1,29 @@
+title: DNS Query for a DDNS Provider Domain
+id: 1ee55f5b-8397-41d7-882d-2e1acfe7dd62
+status: test
+description: Detects a DNS lookup for a host under a free DDNS provider, a common home for command and control.
+references:
+    - https://attack.mitre.org/techniques/T1568/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.command-and-control
+    - attack.t1568
+    - attack.t1071.004
+logsource:
+    category: dns_query
+    product: windows
+detection:
+    selection:
+        QueryName|endswith:
+            - '.duckdns.org'
+            - '.no-ip.com'
+            - '.no-ip.org'
+            - '.ddns.net'
+            - '.hopto.org'
+            - '.zapto.org'
+            - '.dynu.net'
+    condition: selection
+falsepositives:
+    - Home lab and remote camera services that register with a DDNS provider
+level: medium

@@ -1,0 +1,25 @@
+title: Cryptocurrency Miner Command Line
+id: 00f15890-b983-47ce-b1f3-db8f43622ca3
+status: test
+description: Detects command line arguments typical for cryptocurrency miners.
+references:
+    - https://attack.mitre.org/techniques/T1496/001/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.impact
+    - attack.t1496.001
+logsource:
+    category: process_creation
+    product: linux
+detection:
+    selection:
+        CommandLine|contains:
+            - 'stratum+tcp://'
+            - 'stratum+ssl://'
+            - '--donate-level'
+            - 'xmrig'
+    condition: selection
+falsepositives:
+    - Authorized mining, which is rare on business systems
+level: high

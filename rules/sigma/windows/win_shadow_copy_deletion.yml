@@ -1,0 +1,39 @@
+title: Shadow Copies or Recovery Options Removed
+id: 183b6094-15c0-4ee2-ace3-af8c2de4172f
+status: test
+description: Detects commands that delete volume shadow copies or turn off Windows recovery, a usual step before ransomware encrypts files.
+references:
+    - https://attack.mitre.org/techniques/T1490/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.impact
+    - attack.t1490
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection_vssadmin:
+        Image|endswith: '\vssadmin.exe'
+        CommandLine|contains|all:
+            - 'delete'
+            - 'shadows'
+    selection_wmic:
+        Image|endswith: '\wmic.exe'
+        CommandLine|contains|all:
+            - 'shadowcopy'
+            - 'delete'
+    selection_wbadmin:
+        Image|endswith: '\wbadmin.exe'
+        CommandLine|contains|all:
+            - 'delete'
+            - 'catalog'
+    selection_bcdedit:
+        Image|endswith: '\bcdedit.exe'
+        CommandLine|contains|all:
+            - 'recoveryenabled'
+            - ' no'
+    condition: 1 of selection_*
+falsepositives:
+    - Administrators freeing disk space by deleting old shadow copies
+level: high

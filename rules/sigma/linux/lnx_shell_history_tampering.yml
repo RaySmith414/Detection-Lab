@@ -1,0 +1,35 @@
+title: Shell History Cleared or Disabled
+id: f32b64f3-4786-44cb-9198-f4aac67996d3
+status: test
+description: Detects commands that clear the shell history or stop it from being written.
+references:
+    - https://attack.mitre.org/techniques/T1070/003/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.stealth
+    - attack.t1070.003
+    - attack.defense-impairment
+    - attack.t1690
+logsource:
+    category: process_creation
+    product: linux
+detection:
+    selection_setting:
+        CommandLine|contains:
+            - 'history -c'
+            - 'unset HISTFILE'
+            - 'HISTFILE=/dev/null'
+            - 'HISTSIZE=0'
+    selection_file:
+        CommandLine|contains: '.bash_history'
+    selection_destroy:
+        CommandLine|contains:
+            - 'rm '
+            - 'shred '
+            - 'truncate '
+            - '/dev/null'
+    condition: selection_setting or (selection_file and selection_destroy)
+falsepositives:
+    - Users who clear their own history out of habit
+level: medium

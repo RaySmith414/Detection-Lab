@@ -1,0 +1,30 @@
+title: BITSAdmin Download
+id: 77f85f06-4743-4b88-b09f-86bb2e3adc60
+status: test
+description: Detects bitsadmin.exe creating a transfer job for a URL.
+references:
+    - https://attack.mitre.org/techniques/T1197/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.stealth
+    - attack.persistence
+    - attack.t1197
+    - attack.command-and-control
+    - attack.t1105
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection_img:
+        Image|endswith: '\bitsadmin.exe'
+    selection_job:
+        CommandLine|contains:
+            - '/transfer'
+            - '/addfile'
+    selection_url:
+        CommandLine|contains: 'http'
+    condition: all of selection_*
+falsepositives:
+    - Software deployment scripts that still use bitsadmin
+level: medium

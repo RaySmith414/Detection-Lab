@@ -1,0 +1,39 @@
+title: PowerShell Download and Execute Cradle
+id: 6149f647-d4e9-4543-8cfd-3a3b0fdc3a7f
+status: test
+description: Detects PowerShell that downloads content and runs it in the same command.
+references:
+    - https://attack.mitre.org/techniques/T1059/001/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.execution
+    - attack.t1059.001
+    - attack.command-and-control
+    - attack.t1105
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection_img:
+        - Image|endswith:
+              - '\powershell.exe'
+              - '\pwsh.exe'
+        - OriginalFileName:
+              - 'PowerShell.EXE'
+              - 'pwsh.dll'
+    selection_download:
+        CommandLine|contains:
+            - 'DownloadString'
+            - 'DownloadFile'
+            - 'DownloadData'
+            - 'Invoke-WebRequest'
+            - 'Net.WebClient'
+    selection_execute:
+        CommandLine|contains:
+            - 'IEX'
+            - 'Invoke-Expression'
+    condition: all of selection_*
+falsepositives:
+    - Installers and bootstrap scripts that download and run code on purpose
+level: high

@@ -1,0 +1,27 @@
+title: Mshta Running Remote or Inline Script
+id: 8d74ad08-9ddc-450d-9b38-ae8b476eb13e
+status: test
+description: Detects mshta.exe started with a URL or an inline script instead of a local HTA file.
+references:
+    - https://attack.mitre.org/techniques/T1218/005/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.stealth
+    - attack.t1218.005
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection_img:
+        Image|endswith: '\mshta.exe'
+    selection_payload:
+        CommandLine|contains:
+            - 'http://'
+            - 'https://'
+            - 'javascript:'
+            - 'vbscript:'
+    condition: all of selection_*
+falsepositives:
+    - Legacy line-of-business applications that load an HTA from an intranet site
+level: high

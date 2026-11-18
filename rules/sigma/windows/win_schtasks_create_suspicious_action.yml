@@ -1,0 +1,36 @@
+title: Scheduled Task Created With a Suspicious Action
+id: 86b1ef0e-fac8-42b4-b001-5533b53aae8a
+status: test
+description: Detects schtasks.exe creating a task that runs from a user-writable folder or through a script host.
+references:
+    - https://attack.mitre.org/techniques/T1053/005/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.execution
+    - attack.persistence
+    - attack.privilege-escalation
+    - attack.t1053.005
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection_img:
+        Image|endswith: '\schtasks.exe'
+    selection_create:
+        CommandLine|contains: '/create'
+    selection_action:
+        CommandLine|contains:
+            - '\AppData\'
+            - '\Users\Public\'
+            - '\Temp\'
+            - 'powershell'
+            - 'cmd /c'
+            - 'cmd.exe /c'
+            - 'mshta'
+            - 'wscript'
+            - 'cscript'
+    condition: all of selection_*
+falsepositives:
+    - Software updaters that install per-user tasks
+level: medium

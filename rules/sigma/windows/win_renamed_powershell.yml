@@ -1,0 +1,28 @@
+title: PowerShell Running Under Another File Name
+id: 530c023a-4dbf-4c64-a079-7bd4e74b2767
+status: test
+description: Detects a copy of PowerShell that was renamed, by comparing the file name with the original name in the file header.
+references:
+    - https://attack.mitre.org/techniques/T1036/003/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.stealth
+    - attack.t1036.003
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection:
+        OriginalFileName:
+            - 'PowerShell.EXE'
+            - 'pwsh.dll'
+    filter_main_real_name:
+        Image|endswith:
+            - '\powershell.exe'
+            - '\pwsh.exe'
+            - '\powershell_ise.exe'
+    condition: selection and not 1 of filter_main_*
+falsepositives:
+    - Software that ships its own copy of PowerShell under another name
+level: high

@@ -1,0 +1,32 @@
+title: Reverse Shell One-Liner
+id: ef1a5fa0-fa85-4819-94a0-b6dd29e9bce2
+status: test
+description: Detects common one-line reverse shells built on bash network redirection or on netcat with a program attached.
+references:
+    - https://attack.mitre.org/techniques/T1059/004/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.execution
+    - attack.t1059.004
+logsource:
+    category: process_creation
+    product: linux
+detection:
+    selection_dev_tcp:
+        CommandLine|contains:
+            - '/dev/tcp/'
+            - '/dev/udp/'
+    selection_netcat:
+        Image|endswith:
+            - '/nc'
+            - '/ncat'
+            - '/netcat'
+            - '/nc.traditional'
+        CommandLine|contains:
+            - ' -e '
+            - ' -c '
+    condition: 1 of selection_*
+falsepositives:
+    - Health checks that test a port through /dev/tcp
+level: high

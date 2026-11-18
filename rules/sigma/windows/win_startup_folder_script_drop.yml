@@ -1,0 +1,41 @@
+title: Script or Shortcut Written to a Startup Folder
+id: f166951d-b2ce-4b52-9481-cbcf40f63ee1
+status: test
+description: Detects a script, shortcut or executable created in a Startup folder by a script host or command interpreter.
+references:
+    - https://attack.mitre.org/techniques/T1547/001/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.persistence
+    - attack.privilege-escalation
+    - attack.t1547.001
+logsource:
+    category: file_event
+    product: windows
+detection:
+    selection_folder:
+        TargetFilename|contains: '\Start Menu\Programs\Startup\'
+    selection_type:
+        TargetFilename|endswith:
+            - '.lnk'
+            - '.vbs'
+            - '.js'
+            - '.bat'
+            - '.cmd'
+            - '.ps1'
+            - '.hta'
+            - '.exe'
+    selection_writer:
+        Image|endswith:
+            - '\powershell.exe'
+            - '\pwsh.exe'
+            - '\cmd.exe'
+            - '\wscript.exe'
+            - '\cscript.exe'
+            - '\mshta.exe'
+            - '\rundll32.exe'
+    condition: all of selection_*
+falsepositives:
+    - Logon scripts that place shortcuts for users
+level: medium

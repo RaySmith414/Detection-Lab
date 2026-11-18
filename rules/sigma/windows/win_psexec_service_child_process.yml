@@ -1,0 +1,23 @@
+title: Process Started by the PsExec Service
+id: 4ef84875-1887-4641-848b-2a1238b59494
+status: test
+description: Detects a process whose parent is PSEXESVC.exe, which means it was started remotely with PsExec.
+references:
+    - https://attack.mitre.org/techniques/T1569/002/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.execution
+    - attack.t1569.002
+    - attack.lateral-movement
+    - attack.t1021.002
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection:
+        ParentImage|endswith: '\PSEXESVC.exe'
+    condition: selection
+falsepositives:
+    - Administrators who use PsExec for remote support
+level: medium

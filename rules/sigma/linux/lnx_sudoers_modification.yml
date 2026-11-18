@@ -1,0 +1,27 @@
+title: Sudoers File Changed From the Command Line
+id: c62978e7-b5b3-4fc7-8d92-741fa7a854a6
+status: test
+description: Detects a command that writes to /etc/sudoers or to a file under /etc/sudoers.d.
+references:
+    - https://attack.mitre.org/techniques/T1548/003/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.privilege-escalation
+    - attack.t1548.003
+logsource:
+    category: process_creation
+    product: linux
+detection:
+    selection_file:
+        CommandLine|contains: '/etc/sudoers'
+    selection_write:
+        CommandLine|contains:
+            - '>>'
+            - '> /'
+            - 'tee '
+            - 'sed -i'
+    condition: all of selection_*
+falsepositives:
+    - Configuration management that edits sudoers through a shell
+level: high

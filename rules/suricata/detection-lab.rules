@@ -1,0 +1,43 @@
+# Detection Lab: Suricata rules
+#
+# Written for Suricata 7. Every rule carries the ATT&CK tactic and technique it
+# maps to in its metadata. SIDs 9000001 to 9000099 are reserved for this lab.
+# tests/test_suricata_rules.py replays one capture per rule and a benign capture.
+
+# --- Command and control -----------------------------------------------------
+
+alert dns $HOME_NET any -> any any (msg:"DETLAB DNS query for a DDNS provider domain"; dns.query; pcre:"/\.(duckdns\.org|no-ip\.(com|org)|ddns\.net|hopto\.org|zapto\.org|dynu\.net)$/i"; classtype:bad-unknown; sid:9000001; rev:1; metadata:mitre_tactic_id TA0011, mitre_technique_id T1568, created_at 2026_11_18;)
+
+alert dns $HOME_NET any -> any any (msg:"DETLAB DNS query with a very long encoded label, possible DNS tunnel"; dns.query; bsize:>80; pcre:"/[a-z0-9]{40,}\./i"; classtype:bad-unknown; sid:9000002; rev:1; metadata:mitre_tactic_id TA0011, mitre_technique_id T1071.004, created_at 2026_11_18;)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"DETLAB PowerShell fetching a script or executable over HTTP"; flow:established,to_server; http.user_agent; content:"WindowsPowerShell"; http.uri; pcre:"/\.(ps1|psm1|exe|dll|hta|bat|vbs)(\?|$)/i"; classtype:trojan-activity; sid:9000003; rev:1; metadata:mitre_tactic_id TA0011, mitre_technique_id T1105, created_at 2026_11_18;)
+
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"DETLAB Windows executable downloaded over plain HTTP"; flow:established,to_client; file.data; content:"MZ"; depth:2; content:"This program cannot be run in DOS mode"; distance:0; within:300; classtype:policy-violation; sid:9000004; rev:1; metadata:mitre_tactic_id TA0011, mitre_technique_id T1105, created_at 2026_11_18;)
+
+alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"DETLAB TLS connection to a public tunnelling service"; flow:established,to_server; tls.sni; pcre:"/\.(ngrok\.io|ngrok-free\.app|trycloudflare\.com)$/i"; classtype:policy-violation; sid:9000012; rev:1; metadata:mitre_tactic_id TA0011, mitre_technique_id T1572, created_at 2026_11_18;)
+
+alert icmp any any -> any any (msg:"DETLAB Oversized ICMP echo request, possible ICMP tunnel"; itype:8; dsize:>800; threshold:type limit, track by_src, count 1, seconds 60; classtype:bad-unknown; sid:9000011; rev:1; metadata:mitre_tactic_id TA0011, mitre_technique_id T1095, created_at 2026_11_18;)
+
+# --- Initial access ----------------------------------------------------------
+
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"DETLAB Log4Shell JNDI lookup in an HTTP header (CVE-2021-44228)"; flow:established,to_server; http.header; content:"${jndi:"; nocase; classtype:attempted-admin; sid:9000005; rev:1; metadata:mitre_tactic_id TA0001, mitre_technique_id T1190, cve CVE_2021_44228, created_at 2026_11_18;)
+
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"DETLAB Log4Shell JNDI lookup in an HTTP URI (CVE-2021-44228)"; flow:established,to_server; http.uri; content:"${jndi:"; nocase; classtype:attempted-admin; sid:9000006; rev:1; metadata:mitre_tactic_id TA0001, mitre_technique_id T1190, cve CVE_2021_44228, created_at 2026_11_18;)
+
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"DETLAB Shellshock function definition in an HTTP header (CVE-2014-6271)"; flow:established,to_server; http.header; content:"() {"; classtype:attempted-admin; sid:9000007; rev:1; metadata:mitre_tactic_id TA0001, mitre_technique_id T1190, cve CVE_2014_6271, created_at 2026_11_18;)
+
+# --- Persistence -------------------------------------------------------------
+
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"DETLAB Web shell style command in a PHP request"; flow:established,to_server; http.uri; content:".php"; nocase; pcre:"/[?&](cmd|exec|command|c)=(whoami|id|uname|cat(%20|\+)|ls(%20|\+)|net(%20|\+)user|ipconfig|ifconfig)/i"; classtype:web-application-attack; sid:9000008; rev:1; metadata:mitre_tactic_id TA0003, mitre_technique_id T1505.003, created_at 2026_11_18;)
+
+# --- Credential access -------------------------------------------------------
+
+alert tcp $EXTERNAL_NET any -> $HOME_NET 22 (msg:"DETLAB SSH brute force: 10 connection attempts from one source in 60 seconds"; flow:to_server; flags:S,12; threshold:type both, track by_src, count 10, seconds 60; classtype:attempted-admin; sid:9000009; rev:1; metadata:mitre_tactic_id TA0006, mitre_technique_id T1110.001, created_at 2026_11_18;)
+
+# --- Discovery ---------------------------------------------------------------
+
+alert tcp $EXTERNAL_NET any -> $HOME_NET any (msg:"DETLAB TCP port scan: 50 SYN packets from one source in 10 seconds"; flow:to_server; flags:S,12; threshold:type both, track by_src, count 50, seconds 10; classtype:attempted-recon; sid:9000010; rev:1; metadata:mitre_tactic_id TA0007, mitre_technique_id T1046, created_at 2026_11_18;)
+
+# --- Impact ------------------------------------------------------------------
+
+alert tcp $HOME_NET any -> $EXTERNAL_NET any (msg:"DETLAB Stratum mining protocol handshake"; flow:established,to_server; content:"|22|method|22|"; content:"mining.subscribe"; distance:0; within:40; classtype:policy-violation; sid:9000013; rev:1; metadata:mitre_tactic_id TA0040, mitre_technique_id T1496.001, created_at 2026_11_18;)

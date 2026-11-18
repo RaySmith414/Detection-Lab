@@ -1,0 +1,33 @@
+title: LSASS Opened With Memory Read Rights
+id: 94b27935-0ad9-4163-8ae1-8590031958c6
+status: test
+description: Detects a process outside the Windows system folders opening LSASS with access rights used for credential dumping.
+references:
+    - https://attack.mitre.org/techniques/T1003/001/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.credential-access
+    - attack.t1003.001
+logsource:
+    category: process_access
+    product: windows
+detection:
+    selection:
+        TargetImage|endswith: '\lsass.exe'
+        GrantedAccess:
+            - '0x1010'
+            - '0x1410'
+            - '0x1438'
+            - '0x143a'
+            - '0x1fffff'
+    filter_main_system:
+        SourceImage|startswith:
+            - 'C:\Windows\System32\'
+            - 'C:\Windows\SysWOW64\'
+            - 'C:\ProgramData\Microsoft\Windows Defender\'
+            - 'C:\Program Files\Windows Defender\'
+    condition: selection and not 1 of filter_main_*
+falsepositives:
+    - Security products installed outside the filtered folders
+level: high
