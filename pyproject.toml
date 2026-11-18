@@ -1,0 +1,19 @@
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S"]
+ignore = [
+    "S101",  # assert is how pytest works
+    "S603",  # the Suricata call uses a fixed argument list
+    "S607",  # suricata is found on PATH on purpose
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106", "S108"]
+"detlab/samples.py" = ["S108"]  # sample command lines mention /tmp on purpose
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
