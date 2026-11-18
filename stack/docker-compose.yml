@@ -1,0 +1,123 @@
+# The SIEM side of the lab: Elasticsearch and Kibana, plus a Suricata container
+# that replays the captures on demand.
+#
+# Run everything from this directory:
+#
+#   ./init.sh                      # writes .env with random passwords
+#   docker compose up -d --wait
+#   ./replay-pcaps.sh              # optional: Suricata alerts for Kibana
+#
+# Every published port is bound to 127.0.0.1.
+name: detection-lab
+
+services:
+  elasticsearch:
+    image: elasticsearch:8.19.23
+    hostname: elasticsearch
+    environment:
+      discovery.type: single-node
+      cluster.name: detection-lab
+      xpack.security.enabled: "true"
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:?run stack/init.sh to create stack/.env}
+      ES_JAVA_OPTS: -Xms1g -Xmx1g
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - "127.0.0.1:9200:9200"
+    networks: [lab]
+    healthcheck:
+      # $$ keeps the password out of the rendered compose file. The container reads it from its own environment.
+      test: ["CMD-SHELL", "curl -fsS -u \"elastic:$${ELASTIC_PASSWORD}\" 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' || exit 1"]
+      start_period: 60s
+      interval: 10s
+      timeout: 10s
+      retries: 18
+    restart: unless-stopped
+
+  # Kibana logs in to Elasticsearch as kibana_system. This one-shot container gives that account its password.
+  kibana-setup:
+    image: elasticsearch:8.19.23
+    environment:
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:?run stack/init.sh to create stack/.env}
+      KIBANA_PASSWORD: ${KIBANA_PASSWORD:?run stack/init.sh to create stack/.env}
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        code="$$(curl -s -o /dev/null -w '%{http_code}' -u "elastic:$${ELASTIC_PASSWORD}" \
+          -H 'Content-Type: application/json' -X POST \
+          http://elasticsearch:9200/_security/user/kibana_system/_password \
+          -d "{\"password\":\"$${KIBANA_PASSWORD}\"}")"
+        if [ "$$code" = "200" ]; then
+          echo "kibana_system password set"
+        else
+          echo "could not set the kibana_system password (HTTP $$code)" >&2
+          exit 1
+        fi
+    networks: [lab]
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: "no"
+
+  kibana:
+    image: kibana:8.19.23
+    hostname: kibana
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      ELASTICSEARCH_USERNAME: kibana_system
+      ELASTICSEARCH_PASSWORD: ${KIBANA_PASSWORD:?run stack/init.sh to create stack/.env}
+      SERVER_PUBLICBASEURL: http://127.0.0.1:5601
+      XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY: ${KIBANA_ENCRYPTION_KEY:?run stack/init.sh to create stack/.env}
+      XPACK_SECURITY_ENCRYPTIONKEY: ${KIBANA_ENCRYPTION_KEY:?run stack/init.sh to create stack/.env}
+      XPACK_REPORTING_ENCRYPTIONKEY: ${KIBANA_ENCRYPTION_KEY:?run stack/init.sh to create stack/.env}
+      TELEMETRY_OPTIN: "false"
+    ports:
+      - "127.0.0.1:5601:5601"
+    networks: [lab]
+    healthcheck:
+      # Kibana answers 503 until it is ready and then redirects to the login page.
+      test: ["CMD-SHELL", "curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found' || exit 1"]
+      start_period: 60s
+      interval: 10s
+      timeout: 10s
+      retries: 30
+    depends_on:
+      kibana-setup:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Started only by replay-pcaps.sh. Runs every capture through Suricata, one run per
+  # capture, and prints the alerts as JSON lines with the capture name added.
+  suricata:
+    image: jasonish/suricata:7.0.16
+    profiles: [replay]
+    network_mode: none
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        conf=/etc/suricata/suricata.yaml
+        [ -f "$$conf" ] || conf=/etc/suricata.dist/suricata.yaml
+        for capture in /pcaps/*.pcap; do
+          name="$$(basename "$$capture" .pcap)"
+          logs="$$(mktemp -d)"
+          suricata -c "$$conf" -r "$$capture" -S /rules/detection-lab.rules -l "$$logs" -k none \
+            --set 'vars.address-groups.HOME_NET=[10.10.20.0/24]' \
+            --set 'vars.address-groups.EXTERNAL_NET=!$$HOME_NET' >&2
+          grep '"event_type":"alert"' "$$logs/eve.json" | sed "s/^{/{\"lab_capture\":\"$$name\",/" || true
+        done
+    volumes:
+      - ../rules/suricata:/rules:ro
+      - ../simulations/pcaps:/pcaps:ro
+    restart: "no"
+
+networks:
+  lab:
+    name: detection-lab
+
+volumes:
+  elasticsearch-data:
