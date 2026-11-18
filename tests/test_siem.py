@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from detlab import samples, siem
+from detlab import logstash, samples, scenarios, siem
 from detlab.engine import SqliteEngine
 
 
@@ -21,14 +21,31 @@ class FakeResponse:
 class FakeElasticsearch:
     """Answers the calls siem.py makes. EQL searches are answered by the SQLite engine."""
 
-    def __init__(self, rules, events, drop=None, extra=None):
+    def __init__(self, rules, events, drop=None, extra=None, scenario_events=None):
         self.calls = []
+        self.searches = []
         self.bulk = {}
         self.by_query = {siem.to_eql(rule): rule for rule in rules}
-        self.engine = SqliteEngine(events)
-        self.sources = {event["event"]["id"]: event for event in events}
+        self.events = {siem.EVENTS_INDEX: events, siem.SCENARIO_INDEX: scenario_events or []}
+        self.engines = {}
         self.drop = drop
         self.extra = extra or {}
+
+    def _search(self, index, rule):
+        events = self.events[index]
+        if index not in self.engines:
+            self.engines[index] = SqliteEngine(events)
+        sources = {event["event"]["id"]: event for event in events}
+        if rule.is_threshold:
+            groups = [] if rule.key == self.drop else self.engines[index].groups(rule)
+            groups += self.extra.get(rule.key, [])
+            last = events[-1] if events else {"@timestamp": "2026-11-10T09:00:00.000Z", "event": {"id": "none"}}
+            return {"hits": {"sequences": [{"join_keys": [value.upper() for value in group],
+                                            "events": [{"_id": last["event"]["id"], "_source": last}]}
+                                           for group in groups]}}
+        ids = [] if rule.key == self.drop else self.engines[index].matches(rule)
+        ids += self.extra.get(rule.key, [])
+        return {"hits": {"events": [{"_id": i, "_source": sources[i]} for i in ids]}}
 
     def call(self, method, path, expect=(200, 201), **kwargs):
         self.calls.append((method, path))
@@ -38,10 +55,8 @@ class FakeElasticsearch:
                 self.bulk.setdefault(action["index"]["_index"], []).append((action["index"].get("_id"), document))
             return FakeResponse(body={"errors": False, "items": []})
         if path.endswith("/_eql/search"):
-            rule = self.by_query[kwargs["json"]["query"]]
-            ids = [] if rule.key == self.drop else self.engine.matches(rule)
-            ids += self.extra.get(rule.key, [])
-            return FakeResponse(body={"hits": {"events": [{"_id": i, "_source": self.sources[i]} for i in ids]}})
+            self.searches.append(kwargs["json"])
+            return FakeResponse(body=self._search(path.split("/")[1], self.by_query[kwargs["json"]["query"]]))
         if path.endswith("/_count"):
             return FakeResponse(body={"count": len(self.bulk.get(path.split("/")[1], []))})
         return FakeResponse()
@@ -70,14 +85,16 @@ def test_load_stores_every_sample_under_its_event_id(rules, events, tmp_path):
     alerts = tmp_path / "network-alerts.ndjson"
     alerts.write_text(json.dumps({"event_type": "alert", "lab_capture": "dns_tunnel",
                                   "timestamp": "2026-11-10T08:40:00.010000+0000",
-                                  "alert": {"signature_id": 9000002}}) + "\n", encoding="utf-8")
+                                  "alert": {"signature_id": 1000021}}) + "\n", encoding="utf-8")
     counts = siem.load(es, keep_timestamps=True, network_alerts=alerts)
-    assert counts == {siem.EVENTS_INDEX: len(everything), siem.NETWORK_INDEX: 1}
+    assert counts == {siem.EVENTS_INDEX: len(everything), siem.SCENARIO_INDEX: len(scenarios.build()),
+                      siem.NETWORK_INDEX: 1}
+    assert [doc_id for doc_id, _ in es.bulk[siem.SCENARIO_INDEX]][:2] == ["brute_force-001", "brute_force-002"]
     stored = es.bulk[siem.EVENTS_INDEX]
     assert [doc_id for doc_id, _ in stored] == [event["event"]["id"] for event in everything]
     assert stored[0][1]["@timestamp"] == everything[0]["@timestamp"]
     assert es.bulk[siem.NETWORK_INDEX][0][1]["@timestamp"] == "2026-11-10T08:40:00.010Z"
-    for index in (siem.EVENTS_INDEX, siem.ALERTS_INDEX, siem.NETWORK_INDEX):
+    for index in (siem.EVENTS_INDEX, siem.SCENARIO_INDEX, siem.ALERTS_INDEX, siem.NETWORK_INDEX):
         assert ("PUT", f"/{index}") in es.calls
 
 
@@ -99,8 +116,11 @@ def test_detect_reports_nothing_when_every_rule_behaves(rules, events):
     es = FakeElasticsearch(rules, everything)
     assert siem.detect(es, rules) == []
     alerts = [document for _, document in es.bulk[siem.ALERTS_INDEX]]
-    assert len(alerts) == len(events[0])
-    assert siem.count(es, siem.ALERTS_INDEX) == len(events[0])
+    wanted = samples.expected(everything)
+    assert len(alerts) == sum(len(keys) for keys in wanted.values()) + len(samples.BURSTS)
+    assert siem.count(es, siem.ALERTS_INDEX) == len(alerts)
+    burst = next(alert for alert in alerts if alert["rule"]["id"] == "win_failed_logon_burst")
+    assert burst["labels"]["group"] == "203.0.113.50" and burst["labels"]["events_counted"] == "1"
     first = alerts[0]
     assert first["event"]["kind"] == "alert"
     assert first["rule"]["ruleset"] == "detection-lab"
@@ -116,6 +136,38 @@ def test_detect_reports_a_rule_that_stays_quiet_and_one_that_fires_too_often(rul
     assert "missed: win_certutil_download did not fire on win_certutil_download-attack-1" in problems
     assert "false positive: win_certutil_decode fired on background-1" in problems
     assert len(problems) == 2
+
+
+def test_detect_reports_threshold_alerts_that_are_missing_or_unexpected(rules, events):
+    everything = events[0] + events[1]
+    es = FakeElasticsearch(rules, everything, drop="win_failed_logon_burst",
+                           extra={"win_dns_tunnel_burst": [("ws-hr-02",)]})
+    assert siem.detect(es, rules) == [
+        "false positive: win_dns_tunnel_burst raised an alert for ws-hr-02",
+        "missed: win_failed_logon_burst raised no alert for 203.0.113.50"]
+
+
+def test_every_sequence_search_names_a_tiebreaker_field(rules, events):
+    # Elasticsearch does not chain events that share a timestamp unless a second field orders them.
+    fake = FakeElasticsearch(rules, events[0] + events[1])
+    siem.detect(fake, rules)
+    sequences = [search for search in fake.searches if search["query"].startswith("sequence ")]
+    assert len(sequences) == sum(rule.is_threshold for rule in rules) > 0
+    assert all(search["tiebreaker_field"] == "event.id" for search in sequences)
+
+
+def test_every_document_a_sequence_can_count_has_the_tiebreaker_field(events):
+    for document in events[0] + events[1] + scenarios.build():
+        assert document["event"]["id"]
+    assert '"[event][id]"' in logstash.pipeline()     # live events without an ID get a fingerprint as theirs
+
+
+def test_scenarios_give_the_same_hits_in_elasticsearch_as_in_the_test_engine(rules, events):
+    es = FakeElasticsearch(rules, [], scenario_events=scenarios.build())
+    assert siem.detect_scenarios(es, rules) == []
+    quiet = FakeElasticsearch(rules, [], scenario_events=scenarios.build(), drop="win_wmic_remote_process_create")
+    assert siem.detect_scenarios(quiet, rules) == [
+        "missed: win_wmic_remote_process_create did not fire on lateral_movement-015"]
 
 
 def test_client_reports_an_unexpected_status(monkeypatch):
@@ -149,7 +201,8 @@ def test_env_file_is_parsed(tmp_path):
 
 
 def test_kibana_data_views_cover_every_index():
-    assert set(siem.DATA_VIEWS) == {siem.EVENTS_INDEX, siem.ALERTS_INDEX, siem.NETWORK_INDEX}
+    assert set(siem.DATA_VIEWS) == {siem.EVENTS_INDEX, siem.SCENARIO_INDEX, siem.ALERTS_INDEX, siem.NETWORK_INDEX,
+                                    siem.LIVE_INDEX, siem.LIVE_ALERTS_INDEX}
 
 
 def test_expected_hits_come_from_the_labels(events):
@@ -157,3 +210,24 @@ def test_expected_hits_come_from_the_labels(events):
     assert wanted["win_certutil_download-attack-1"] == ["win_certutil_download"]
     assert wanted["win_certutil_download-benign-1"] == []
     assert wanted["background-1"] == []
+
+
+def test_dashboard_charts_fields_of_the_two_live_data_views():
+    used = siem.dashboard_fields()
+    assert set(used) == {siem.LIVE_INDEX, siem.LIVE_ALERTS_INDEX}
+    assert {"@timestamp", "process.executable", "host.name", "labels.lab_scenario"} <= used[siem.LIVE_INDEX]
+    assert used[siem.LIVE_ALERTS_INDEX] == {"threat.tactic.name"}
+    dashboard = json.loads(siem.DASHBOARD.read_text(encoding="utf-8"))
+    views = {reference["id"] for reference in dashboard["references"]}
+    assert views == set(used), "every panel's data view is one that `siem kibana` creates"
+    assert views <= set(siem.DATA_VIEWS)
+
+
+def test_missing_dashboard_fields_are_reported():
+    class OnlyTimestamp:
+        def call(self, method, path, expect=(200,), **kwargs):
+            return FakeResponse(body={"fields": {"@timestamp": {}}})
+
+    problems = siem.missing_dashboard_fields(OnlyTimestamp())
+    assert f"{siem.LIVE_INDEX}: the dashboard charts host.name, which the index does not have" in problems
+    assert not any("@timestamp" in problem for problem in problems)

@@ -12,7 +12,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 if [ -e .env ] && [ "${1:-}" != "--force" ]; then
-    echo "stack/.env already exists. Keep it, or run with --force to replace it." >&2
+    echo "stack/.env already exists. Keep it or run with --force to replace it." >&2
     exit 1
 fi
 
@@ -32,9 +32,17 @@ KIBANA_PASSWORD=$(random_hex 24)
 
 # Key Kibana uses to encrypt saved objects and sessions
 KIBANA_ENCRYPTION_KEY=$(random_hex 32)
+
+# The log generator and the attack simulator write stack/logs as this user
+LAB_UID=$(id -u)
+LAB_GID=$(id -g)
 ENV
 chmod 600 .env
 echo "Wrote stack/.env with new secrets (file mode 600)."
+
+# Logstash reads these folders as another user. They have to exist, owned by you and
+# readable by everyone, before Docker mounts them.
+(umask 022 && mkdir -p logs/windows logs/linux logs/network && chmod 755 logs logs/windows logs/linux logs/network)
 
 if [ -r /proc/sys/vm/max_map_count ]; then
     current="$(cat /proc/sys/vm/max_map_count)"

@@ -1,0 +1,281 @@
+{
+  "index_patterns": [
+    "detlab-*"
+  ],
+  "priority": 200,
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    },
+    "mappings": {
+      "dynamic_templates": [
+        {
+          "strings_as_keywords": {
+            "match_mapping_type": "string",
+            "mapping": {
+              "type": "keyword",
+              "ignore_above": 8191
+            }
+          }
+        }
+      ],
+      "properties": {
+        "@timestamp": {
+          "type": "date"
+        },
+        "destination": {
+          "properties": {
+            "domain": {
+              "type": "keyword",
+              "ignore_above": 8191
+            },
+            "ip": {
+              "type": "keyword",
+              "ignore_above": 8191
+            },
+            "port": {
+              "type": "keyword",
+              "ignore_above": 8191
+            }
+          }
+        },
+        "dns": {
+          "properties": {
+            "question": {
+              "properties": {
+                "name": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                }
+              }
+            }
+          }
+        },
+        "event": {
+          "properties": {
+            "category": {
+              "type": "keyword",
+              "ignore_above": 8191
+            },
+            "code": {
+              "type": "keyword",
+              "ignore_above": 8191
+            },
+            "dataset": {
+              "type": "keyword",
+              "ignore_above": 8191
+            },
+            "id": {
+              "type": "keyword",
+              "ignore_above": 8191
+            },
+            "provider": {
+              "type": "keyword",
+              "ignore_above": 8191
+            },
+            "type": {
+              "type": "keyword",
+              "ignore_above": 8191
+            }
+          }
+        },
+        "file": {
+          "properties": {
+            "path": {
+              "type": "keyword",
+              "ignore_above": 8191
+            }
+          }
+        },
+        "host": {
+          "properties": {
+            "name": {
+              "type": "keyword",
+              "ignore_above": 8191
+            },
+            "os": {
+              "properties": {
+                "type": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                }
+              }
+            }
+          }
+        },
+        "labels": {
+          "properties": {
+            "lab_case": {
+              "type": "keyword",
+              "ignore_above": 8191
+            },
+            "lab_rule": {
+              "type": "keyword",
+              "ignore_above": 8191
+            },
+            "lab_scenario": {
+              "type": "keyword",
+              "ignore_above": 8191
+            }
+          }
+        },
+        "message": {
+          "type": "keyword",
+          "ignore_above": 8191
+        },
+        "process": {
+          "properties": {
+            "command_line": {
+              "type": "keyword",
+              "ignore_above": 8191
+            },
+            "executable": {
+              "type": "keyword",
+              "ignore_above": 8191
+            },
+            "name": {
+              "type": "keyword",
+              "ignore_above": 8191
+            },
+            "parent": {
+              "properties": {
+                "command_line": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                },
+                "executable": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                }
+              }
+            },
+            "pe": {
+              "properties": {
+                "original_file_name": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                }
+              }
+            },
+            "working_directory": {
+              "type": "keyword",
+              "ignore_above": 8191
+            }
+          }
+        },
+        "registry": {
+          "properties": {
+            "data": {
+              "properties": {
+                "strings": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                }
+              }
+            },
+            "path": {
+              "type": "keyword",
+              "ignore_above": 8191
+            }
+          }
+        },
+        "source": {
+          "properties": {
+            "ip": {
+              "type": "keyword",
+              "ignore_above": 8191
+            }
+          }
+        },
+        "user": {
+          "properties": {
+            "name": {
+              "type": "keyword",
+              "ignore_above": 8191
+            }
+          }
+        },
+        "winlog": {
+          "properties": {
+            "channel": {
+              "type": "keyword",
+              "ignore_above": 8191
+            },
+            "event_data": {
+              "properties": {
+                "CreationUtcTime": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                },
+                "Destination": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                },
+                "GrantedAccess": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                },
+                "ImagePath": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                },
+                "IntegrityLevel": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                },
+                "IpAddress": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                },
+                "LogonType": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                },
+                "Operation": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                },
+                "PrivilegeList": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                },
+                "ServiceName": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                },
+                "StartModule": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                },
+                "SubjectUserName": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                },
+                "TargetImage": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                },
+                "TargetUserName": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                },
+                "TaskContent": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                },
+                "TaskName": {
+                  "type": "keyword",
+                  "ignore_above": 8191
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "_meta": {
+    "description": "Detection Lab: keyword mappings for every field a rule can query"
+  }
+}

@@ -1,11 +1,12 @@
-# The SIEM side of the lab: Elasticsearch and Kibana, plus a Suricata container
-# that replays the captures on demand.
+# The SIEM side of the lab: Elasticsearch, Logstash and Kibana, a Suricata container
+# that replays the captures on demand and the two telemetry generators.
 #
 # Run everything from this directory:
 #
-#   ./init.sh                      # writes .env with random passwords
-#   docker compose up -d --wait
-#   ./replay-pcaps.sh              # optional: Suricata alerts for Kibana
+#   ./init.sh                                # writes .env with random passwords
+#   docker compose up -d --wait              # Elasticsearch, Logstash and Kibana
+#   ./replay-pcaps.sh                        # optional: Suricata alerts for Kibana
+#   docker compose --profile live up -d      # optional: log generator and attack simulator
 #
 # Every published port is bound to 127.0.0.1.
 name: detection-lab
@@ -38,30 +39,64 @@ services:
       retries: 18
     restart: unless-stopped
 
-  # Kibana logs in to Elasticsearch as kibana_system. This one-shot container gives that account its password.
-  kibana-setup:
+  # One-shot setup: gives Kibana's account its password and installs the index template
+  # that maps every field the rules query.
+  setup:
     image: elasticsearch:8.19.23
     environment:
       ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:?run stack/init.sh to create stack/.env}
       KIBANA_PASSWORD: ${KIBANA_PASSWORD:?run stack/init.sh to create stack/.env}
+    volumes:
+      - ./elasticsearch/detlab-template.json:/setup/detlab-template.json:ro
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
-        code="$$(curl -s -o /dev/null -w '%{http_code}' -u "elastic:$${ELASTIC_PASSWORD}" \
-          -H 'Content-Type: application/json' -X POST \
-          http://elasticsearch:9200/_security/user/kibana_system/_password \
+        call() {
+          curl -s -o /dev/null -w '%{http_code}' -u "elastic:$${ELASTIC_PASSWORD}" \
+            -H 'Content-Type: application/json' "$$@"
+        }
+        code="$$(call -X POST http://elasticsearch:9200/_security/user/kibana_system/_password \
           -d "{\"password\":\"$${KIBANA_PASSWORD}\"}")"
-        if [ "$$code" = "200" ]; then
-          echo "kibana_system password set"
-        else
+        if [ "$$code" != "200" ]; then
           echo "could not set the kibana_system password (HTTP $$code)" >&2
           exit 1
         fi
+        echo "kibana_system password set"
+        code="$$(call -X PUT http://elasticsearch:9200/_index_template/detlab \
+          --data-binary @/setup/detlab-template.json)"
+        if [ "$$code" != "200" ]; then
+          echo "could not install the index template (HTTP $$code)" >&2
+          exit 1
+        fi
+        echo "index template installed"
     networks: [lab]
     depends_on:
       elasticsearch:
         condition: service_healthy
     restart: "no"
+
+  # Reads the logs that the generators write under ./logs and stores them as ECS documents.
+  logstash:
+    image: logstash:8.19.23
+    hostname: logstash
+    environment:
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:?run stack/init.sh to create stack/.env}
+      LS_JAVA_OPTS: -Xms512m -Xmx512m
+      XPACK_MONITORING_ENABLED: "false"
+    volumes:
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./logs:/var/log/detection-lab:ro
+    networks: [lab]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost:9600/_node/pipelines || exit 1"]
+      start_period: 60s
+      interval: 10s
+      timeout: 10s
+      retries: 30
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
   kibana:
     image: kibana:8.19.23
@@ -86,12 +121,12 @@ services:
       timeout: 10s
       retries: 30
     depends_on:
-      kibana-setup:
+      setup:
         condition: service_completed_successfully
     restart: unless-stopped
 
   # Started only by replay-pcaps.sh. Runs every capture through Suricata, one run per
-  # capture, and prints the alerts as JSON lines with the capture name added.
+  # capture. Prints the alerts as JSON lines with the capture name added.
   suricata:
     image: jasonish/suricata:7.0.16
     profiles: [replay]
@@ -114,6 +149,31 @@ services:
       - ../rules/suricata:/rules:ro
       - ../simulations/pcaps:/pcaps:ro
     restart: "no"
+
+  # Started with `docker compose --profile live up -d`. Both write under ./logs as the user who ran
+  # init.sh. Logstash ships what they write.
+  log-generator:
+    build: ../log-generator
+    profiles: [live]
+    user: "${LAB_UID:?run stack/init.sh to create stack/.env}:${LAB_GID:?run stack/init.sh to create stack/.env}"
+    environment:
+      LOG_DIR: /var/log/detection-lab
+      GENERATION_RATE: "5"
+    volumes:
+      - ./logs:/var/log/detection-lab
+    network_mode: none
+    restart: unless-stopped
+
+  attack-simulator:
+    build: ../attack-simulator
+    profiles: [live]
+    user: "${LAB_UID:?run stack/init.sh to create stack/.env}:${LAB_GID:?run stack/init.sh to create stack/.env}"
+    environment:
+      LOG_DIR: /var/log/detection-lab
+    volumes:
+      - ./logs:/var/log/detection-lab
+    network_mode: none
+    restart: unless-stopped
 
 networks:
   lab:
