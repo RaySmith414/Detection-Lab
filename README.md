@@ -174,6 +174,14 @@ Detection-Lab/
   tests/
 ```
 
+## License
+
+MIT. See [LICENSE](LICENSE).
+
+Elasticsearch, Logstash, Kibana and Suricata are the work of their own projects and companies and come under their own licenses. This repository only configures them.
+
+The tactic and technique names in [`detlab/data/attack.json`](detlab/data/attack.json) come from MITRE ATT&CK® (© The MITRE Corporation). They are used under the [ATT&CK Terms of Use](https://attack.mitre.org/resources/legal-and-branding/terms-of-use/). MITRE ATT&CK® and ATT&CK® are registered trademarks of The MITRE Corporation.
+
 ## Author
 
 Rayshaun Smith ([GitHub](https://github.com/RaySmith414))
