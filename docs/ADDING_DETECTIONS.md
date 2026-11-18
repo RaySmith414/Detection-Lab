@@ -1,6 +1,6 @@
 # Adding a detection
 
-A detection in this lab is a rule plus the telemetry that proves it. This page adds one Sigma rule and one Suricata rule from start to finish.
+A detection in this lab is a rule plus the telemetry that proves it. This page adds one Sigma rule, one threshold rule and one Suricata rule from start to finish and shows what differs for a rule on the Linux auth log.
 
 Set up once:
 
@@ -110,6 +110,87 @@ Commit the rule together with the generated files.
 .venv/bin/python -m detlab siem detect
 ```
 
+## A threshold rule
+
+A threshold rule counts the hits of another rule: ten failed logons from one address within five minutes. In Sigma that is a correlation rule. The lab keeps both in one file, the counted rule first:
+
+```yaml
+title: Failed Logon
+id: 5b0f6f0e-6a55-4f0c-9d7e-2f3c1a4b5d61
+name: lab_failed_logon
+status: test
+# ... description, references, author, date and tags as in any rule ...
+logsource:
+    service: security
+    product: windows
+detection:
+    selection:
+        EventID: '4625'
+    condition: selection
+falsepositives:
+    - Users who mistype a password
+level: informational
+---
+title: Burst of Failed Logons From One Source Address
+id: 0c6c3a57-7f0b-4b63-8c1b-9a3e5d7f1b24
+status: test
+# ... description, references, author, date and tags ...
+correlation:
+    type: event_count
+    rules:
+        - lab_failed_logon
+    group-by:
+        - IpAddress
+    timespan: 5m
+    condition:
+        gte: 10
+falsepositives:
+    - A service that keeps retrying with an expired password
+level: high
+```
+
+The counted rule has the level `informational` because it must not alert on its own. Only `event_count` is supported: it is the one correlation type that the SQL of the unit tests and the EQL sequence in Elasticsearch count the same way.
+
+One detail decides whether Elasticsearch counts at all. It chains the events of a sequence only when it can put them in order. Events that share a timestamp, such as auth log lines within one second, need a second field for that. The lab searches with `"tiebreaker_field": "event.id"` and every converted threshold query says so in its header. Without the tiebreaker, a burst that arrives within one second raises no alert.
+
+Its samples are groups of events, in `BURSTS` in `detlab/samples.py`: a group that must raise the alert and groups that must stay below the count.
+
+```python
+"win_failed_logon_burst": (
+    [("203.0.113.50", [failed_logon("203.0.113.50", account) for account in ["administrator", "admin"] * 6])],
+    [("10.10.20.31", [failed_logon("10.10.20.31", "jdoe") for _ in range(4)])],
+),
+```
+
+The first value of a group is what the rule groups by, here the source address. `python -m detlab test` then checks that the rule raises an alert for exactly the first kind of group.
+
+## A rule for the Linux auth log
+
+Rules with `service: auth` read lines of `/var/log/auth.log`. Logstash parses each line and a rule can use three fields: `program` (sshd, sudo), `message` (the whole line) and `src_ip` (the address after "from").
+
+```yaml
+logsource:
+    product: linux
+    service: auth
+detection:
+    selection:
+        program: 'sshd'
+        message|contains: 'Failed password for'
+    condition: selection
+```
+
+The samples start as log lines. `auth_line()`, `sudo()` and `ssh_failure()` in `detlab/samples.py` send each line through the Python patterns in [`detlab/authlog.py`](../detlab/authlog.py). Those patterns mirror the grok patterns of the Logstash pipeline one for one and sit right next to them, so change both together.
+
+With the stack running, one command compares the two sides. The auth log rules must find in Elasticsearch what the unit test engine finds in the file Logstash has read:
+
+```bash
+.venv/bin/python -m detlab siem hunt --expect-auth-log stack/logs/linux/auth.log
+```
+
+## The scenarios
+
+After a new rule passes its own samples, run `python -m detlab scenarios`. When the rule fires in one of the attack simulator's scenarios, the command says so and asks for the rule to be added to `EXPECTED` in [`detlab/scenarios.py`](../detlab/scenarios.py). That list is what keeps a later change from quietly losing the detection.
+
 ## A Suricata rule
 
 ### 1. Write the rule
@@ -117,13 +198,13 @@ Commit the rule together with the generated files.
 Add it to [`rules/suricata/detection-lab.rules`](../rules/suricata/detection-lab.rules):
 
 ```text
-alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"DETLAB curl user agent leaving the lab network"; flow:established,to_server; http.user_agent; content:"curl/"; startswith; classtype:policy-violation; sid:9000014; rev:1; metadata:mitre_tactic_id TA0011, mitre_technique_id T1071.001, created_at 2026_11_18;)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"DETECTION-LAB Python requests library leaving the lab network"; flow:established,to_server; http.user_agent; content:"python-requests/"; startswith; classtype:policy-violation; sid:1000091; rev:1; metadata:mitre_tactic_id TA0011, mitre_technique_id T1071.001, created_at 2026_11_18;)
 ```
 
 Conventions:
 
-- `sid` between 9000001 and 9000099, unused so far
-- `msg` starts with `DETLAB`
+- `sid` between 1000001 and 1000099, unused so far
+- `msg` starts with `DETECTION-LAB`
 - `metadata` carries `mitre_tactic_id` and `mitre_technique_id`
 
 A new technique has to be in `detlab/data/attack.json` before the tag check accepts it. The last section shows how to add it.
@@ -135,9 +216,9 @@ Add a capture to `build()` in [`detlab/pcaps.py`](../detlab/pcaps.py) and name t
 ```python
 c = Capture()
 tcp_session(c, CLIENT, INTERNET, 49210, 80, [(
-    http_request("GET", "/install.sh", "tools.lab-example.com", {"User-Agent": "curl/8.5.0"}),
-    http_response(b"echo lab sample\n", "text/plain"))])
-captures["http_curl_outbound"] = (c.packets, [9000014])
+    http_request("GET", "/api/v1/items", "api.lab-example.com", {"User-Agent": "python-requests/2.32.0"}),
+    http_response(b"[]", "application/json"))])
+captures["http_python_requests_outbound"] = (c.packets, [1000091])
 ```
 
 `tcp_session` writes a complete conversation with handshake, sequence numbers and close, which Suricata's stream engine needs before it looks at HTTP or TLS. Then check the benign capture at the end of `build()`: it should contain traffic close to the new rule that stays below it.
