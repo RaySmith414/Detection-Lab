@@ -1,0 +1,32 @@
+title: Shell or WMIC Connecting to a Remote Administration Port
+id: 225fb315-6b98-4dc9-aca4-a548bdc8f8cf
+status: test
+description: Detects cmd, PowerShell or WMIC connecting to SMB, RPC or WinRM on another host.
+references:
+    - https://attack.mitre.org/techniques/T1021/002/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.lateral-movement
+    - attack.t1021.002
+    - attack.t1021.006
+logsource:
+    category: network_connection
+    product: windows
+detection:
+    selection:
+        Image|endswith:
+            - '\cmd.exe'
+            - '\powershell.exe'
+            - '\pwsh.exe'
+            - '\wmic.exe'
+        DestinationPort:
+            - '445'
+            - '135'
+            - '5985'
+            - '5986'
+    condition: selection
+falsepositives:
+    - Administrators who manage servers from a shell
+    - Logon scripts that map network drives
+level: medium

@@ -1,0 +1,53 @@
+title: DNS Query With a Long Encoded First Label (Base for the Burst Rule)
+id: 8e2a4c1d-3b5f-4a69-b7c8-1d2e3f4a5b6c
+name: lab_dns_long_encoded_label
+status: test
+description: Detects the same lookups as win_dns_query_long_encoded_label. It exists so the burst rule below can count them.
+references:
+    - https://attack.mitre.org/techniques/T1071/004/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.command-and-control
+    - attack.t1071.004
+logsource:
+    category: dns_query
+    product: windows
+detection:
+    selection:
+        QueryName|re: '[0-9a-z]{16,}\..+'
+    filter_main_known_services:
+        QueryName|endswith:
+            - '.cloudfront.net'
+            - '.akamaihd.net'
+            - '.amazonaws.com'
+    condition: selection and not 1 of filter_main_*
+falsepositives:
+    - Content delivery and tracking domains with long generated host names
+level: informational
+---
+title: Burst of DNS Queries With Long Encoded Labels From One Host
+id: 2f7d9b3a-6c4e-4d18-a5f2-7b8c9d0e1f23
+status: test
+description: Detects ten or more lookups with a long encoded first label from one host within five minutes, the pattern of DNS tunnelling.
+references:
+    - https://attack.mitre.org/techniques/T1071/004/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.command-and-control
+    - attack.t1071.004
+    - attack.exfiltration
+    - attack.t1048.003
+correlation:
+    type: event_count
+    rules:
+        - lab_dns_long_encoded_label
+    group-by:
+        - Computer
+    timespan: 5m
+    condition:
+        gte: 10
+falsepositives:
+    - A browser loading many resources from one content delivery network
+level: high

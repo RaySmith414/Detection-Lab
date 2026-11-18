@@ -23,6 +23,7 @@ detection:
         CommandLine|contains:
             - '\AppData\'
             - '\Users\Public\'
+            - '\ProgramData\'
             - '\Temp\'
             - 'powershell'
             - 'cmd /c'

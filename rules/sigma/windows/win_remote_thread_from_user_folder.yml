@@ -1,0 +1,27 @@
+title: Remote Thread Created by a Program in a User Folder
+id: 3bea6379-2f9a-4ce2-b888-b89f945b3be5
+status: test
+description: Detects a program in a user-writable folder creating a thread in another process.
+references:
+    - https://attack.mitre.org/techniques/T1055/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.stealth
+    - attack.privilege-escalation
+    - attack.t1055
+logsource:
+    category: create_remote_thread
+    product: windows
+detection:
+    selection:
+        SourceImage|contains:
+            - '\Temp\'
+            - '\AppData\'
+            - '\Users\Public\'
+            - '\ProgramData\'
+            - '\Downloads\'
+    condition: selection
+falsepositives:
+    - Debuggers and game overlays installed per user
+level: high

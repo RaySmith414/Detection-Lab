@@ -1,0 +1,31 @@
+title: Service Installed From a User-Writable Path
+id: b28c44d8-1bb2-4e44-973d-42281a6c939f
+status: test
+description: Detects event 7045 for a service whose binary sits in a user-writable folder or starts a command interpreter.
+references:
+    - https://attack.mitre.org/techniques/T1543/003/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.persistence
+    - attack.privilege-escalation
+    - attack.t1543.003
+logsource:
+    service: system
+    product: windows
+detection:
+    selection_event:
+        EventID: '7045'
+    selection_path:
+        ImagePath|contains:
+            - '\ProgramData\'
+            - '\AppData\'
+            - '\Users\Public\'
+            - '\Temp\'
+            - 'powershell'
+            - 'cmd.exe /c'
+            - '%COMSPEC%'
+    condition: all of selection_*
+falsepositives:
+    - Vendor agents that install their service binary under ProgramData
+level: high

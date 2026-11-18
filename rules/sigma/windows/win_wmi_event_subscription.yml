@@ -1,0 +1,26 @@
+title: WMI Event Subscription Created
+id: 8c68b8b0-118f-4dfe-bcb9-b8c6c8d2fa9d
+status: test
+description: Detects a new WMI event filter, consumer or binding, which can run a command whenever the event fires.
+references:
+    - https://attack.mitre.org/techniques/T1546/003/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.persistence
+    - attack.privilege-escalation
+    - attack.t1546.003
+logsource:
+    category: wmi_event
+    product: windows
+detection:
+    selection:
+        EventID:
+            - '19'
+            - '20'
+            - '21'
+        Operation: 'Created'
+    condition: selection
+falsepositives:
+    - Management agents that register their own WMI subscriptions
+level: high

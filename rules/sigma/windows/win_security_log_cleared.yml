@@ -1,0 +1,21 @@
+title: Security Event Log Cleared
+id: bbe54182-2c61-40ad-b4c8-1e79f1f192b7
+status: test
+description: Detects event 1102, which Windows writes when the Security log is cleared.
+references:
+    - https://attack.mitre.org/techniques/T1685/005/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.defense-impairment
+    - attack.t1685.005
+logsource:
+    service: security
+    product: windows
+detection:
+    selection:
+        EventID: '1102'
+    condition: selection
+falsepositives:
+    - Lab resets and imaging scripts
+level: high

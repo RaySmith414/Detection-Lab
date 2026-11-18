@@ -1,0 +1,26 @@
+title: File Creation Time Changed by a Program Outside the System Folders
+id: 5840b228-3eb8-474a-ad3f-813bc312f94b
+status: test
+description: Detects a program outside the Windows and Program Files folders changing the creation time of a file.
+references:
+    - https://attack.mitre.org/techniques/T1070/006/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.stealth
+    - attack.t1070.006
+logsource:
+    category: file_change
+    product: windows
+detection:
+    selection:
+        Image|contains: '\'
+    filter_main_system:
+        Image|startswith:
+            - 'C:\Windows\'
+            - 'C:\Program Files\'
+            - 'C:\Program Files (x86)\'
+    condition: selection and not 1 of filter_main_*
+falsepositives:
+    - Archive tools and sync clients that restore original timestamps
+level: medium

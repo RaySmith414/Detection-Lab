@@ -1,0 +1,27 @@
+title: Run Key Added With reg.exe
+id: f46f211d-8912-4fff-b4b1-e5a3b8c22ef1
+status: test
+description: Detects reg.exe adding a value under a Run or RunOnce key.
+references:
+    - https://attack.mitre.org/techniques/T1547/001/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.persistence
+    - attack.privilege-escalation
+    - attack.t1547.001
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection_img:
+        - Image|endswith: '\reg.exe'
+        - OriginalFileName: 'reg.exe'
+    selection_cmd:
+        CommandLine|contains|all:
+            - ' add '
+            - '\CurrentVersion\Run'
+    condition: all of selection_*
+falsepositives:
+    - Software installers and logon scripts that register a startup entry
+level: medium

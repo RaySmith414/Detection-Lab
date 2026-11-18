@@ -1,0 +1,34 @@
+title: System Process Name Running From an Unusual Path
+id: ab550a69-7120-41cb-98e9-82afa22a10d9
+status: test
+description: Detects a process named like a core Windows process that does not run from a Windows system folder.
+references:
+    - https://attack.mitre.org/techniques/T1036/005/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.stealth
+    - attack.t1036.005
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection:
+        Image|endswith:
+            - '\svchost.exe'
+            - '\lsass.exe'
+            - '\csrss.exe'
+            - '\services.exe'
+            - '\winlogon.exe'
+            - '\smss.exe'
+            - '\spoolsv.exe'
+            - '\taskhostw.exe'
+    filter_main_system_folder:
+        Image|startswith:
+            - 'C:\Windows\System32\'
+            - 'C:\Windows\SysWOW64\'
+            - 'C:\Windows\WinSxS\'
+    condition: selection and not 1 of filter_main_*
+falsepositives:
+    - Windows running from a drive other than C
+level: high

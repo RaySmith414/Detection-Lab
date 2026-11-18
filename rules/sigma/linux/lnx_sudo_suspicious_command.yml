@@ -1,0 +1,32 @@
+title: Sudo Running a Root Shell or Touching Credential Files
+id: 7c1e5a2b-9d3f-4e68-b0a4-5f6e7d8c9b1a
+status: test
+description: Detects sudo log lines for commands that open a root shell, read the shadow file, change the root password, create a second account with user ID 0 or open a file in /tmp to everyone.
+references:
+    - https://attack.mitre.org/techniques/T1548/003/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.privilege-escalation
+    - attack.t1548.003
+logsource:
+    product: linux
+    service: auth
+detection:
+    selection_sudo:
+        program: 'sudo'
+        message|contains: 'COMMAND='
+    selection_command:
+        message|contains:
+            - 'COMMAND=/bin/bash'
+            - 'COMMAND=/usr/bin/bash'
+            - 'COMMAND=/bin/sh'
+            - 'COMMAND=/usr/bin/sh'
+            - '/etc/shadow'
+            - 'passwd root'
+            - 'useradd -o -u 0'
+            - 'chmod 777 /tmp/'
+    condition: all of selection_*
+falsepositives:
+    - Administrators who open a root shell with sudo
+level: medium

@@ -1,0 +1,34 @@
+title: Scheduled Task Registered With a Suspicious Command
+id: 2e6b0b82-fe1c-447c-b6ce-8ce57a35a1f2
+status: test
+description: Detects event 4698 for a task whose action runs from a user-writable folder or starts a script host.
+references:
+    - https://attack.mitre.org/techniques/T1053/005/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.execution
+    - attack.persistence
+    - attack.privilege-escalation
+    - attack.t1053.005
+logsource:
+    service: security
+    product: windows
+detection:
+    selection_event:
+        EventID: '4698'
+    selection_action:
+        TaskContent|contains:
+            - '\ProgramData\'
+            - '\AppData\'
+            - '\Users\Public\'
+            - '\Temp\'
+            - 'powershell'
+            - 'mshta'
+            - 'wscript'
+            - 'cscript'
+            - 'rundll32'
+    condition: all of selection_*
+falsepositives:
+    - Software that updates itself from ProgramData
+level: high

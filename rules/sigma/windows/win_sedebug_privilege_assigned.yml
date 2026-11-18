@@ -1,0 +1,29 @@
+title: SeDebugPrivilege Assigned to a User Logon
+id: f47c1797-73bc-461d-a82a-0b4743f224f2
+status: test
+description: Detects event 4672 that lists SeDebugPrivilege for an account other than the built-in service accounts.
+references:
+    - https://attack.mitre.org/techniques/T1134/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.privilege-escalation
+    - attack.t1134
+logsource:
+    service: security
+    product: windows
+detection:
+    selection:
+        EventID: '4672'
+        PrivilegeList|contains: 'SeDebugPrivilege'
+    filter_main_service_accounts:
+        SubjectUserName:
+            - 'SYSTEM'
+            - 'LOCAL SERVICE'
+            - 'NETWORK SERVICE'
+    filter_main_machine_accounts:
+        SubjectUserName|endswith: '$'
+    condition: selection and not 1 of filter_main_*
+falsepositives:
+    - Every interactive logon of a local administrator
+level: low

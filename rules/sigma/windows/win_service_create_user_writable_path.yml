@@ -24,6 +24,7 @@ detection:
         CommandLine|contains:
             - '\AppData\'
             - '\Users\Public\'
+            - '\ProgramData\'
             - '\Temp\'
             - 'cmd /c'
             - 'cmd.exe /c'

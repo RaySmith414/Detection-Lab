@@ -1,0 +1,47 @@
+title: Failed SSH Password Login
+id: 3a9d7c5e-1f2b-4c86-9e0d-6b5a4c3d2e1f
+name: lab_ssh_failed_password
+status: test
+description: Detects a failed SSH password login in the auth log. On its own this is an everyday event, so only the burst rule below raises an alert.
+references:
+    - https://attack.mitre.org/techniques/T1110/001/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.credential-access
+    - attack.t1110.001
+logsource:
+    product: linux
+    service: auth
+detection:
+    selection:
+        program: 'sshd'
+        message|contains: 'Failed password for'
+    condition: selection
+falsepositives:
+    - Users who mistype a password
+level: informational
+---
+title: Burst of Failed SSH Password Logins From One Source Address
+id: 9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
+status: test
+description: Detects ten or more failed SSH password logins from one source address within five minutes.
+references:
+    - https://attack.mitre.org/techniques/T1110/001/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.credential-access
+    - attack.t1110.001
+correlation:
+    type: event_count
+    rules:
+        - lab_ssh_failed_password
+    group-by:
+        - src_ip
+    timespan: 5m
+    condition:
+        gte: 10
+falsepositives:
+    - A monitoring system that probes SSH with a wrong password
+level: high

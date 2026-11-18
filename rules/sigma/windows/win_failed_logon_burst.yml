@@ -1,0 +1,46 @@
+title: Failed Logon
+id: 5b0f6f0e-6a55-4f0c-9d7e-2f3c1a4b5d61
+name: lab_failed_logon
+status: test
+description: Detects a failed logon. On its own this is an everyday event, so only the burst rule below raises an alert.
+references:
+    - https://attack.mitre.org/techniques/T1110/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.credential-access
+    - attack.t1110
+logsource:
+    service: security
+    product: windows
+detection:
+    selection:
+        EventID: '4625'
+    condition: selection
+falsepositives:
+    - Users who mistype a password
+level: informational
+---
+title: Burst of Failed Logons From One Source Address
+id: 0c6c3a57-7f0b-4b63-8c1b-9a3e5d7f1b24
+status: test
+description: Detects ten or more failed logons from one source address within five minutes.
+references:
+    - https://attack.mitre.org/techniques/T1110/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.credential-access
+    - attack.t1110
+correlation:
+    type: event_count
+    rules:
+        - lab_failed_logon
+    group-by:
+        - IpAddress
+    timespan: 5m
+    condition:
+        gte: 10
+falsepositives:
+    - A service that keeps retrying with an expired password
+level: high

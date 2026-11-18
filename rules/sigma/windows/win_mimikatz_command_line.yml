@@ -1,0 +1,29 @@
+title: Mimikatz Module Names on the Command Line
+id: a1646766-8b11-4c48-8b36-e4863b7cd865
+status: test
+description: Detects Mimikatz by its file name or by the module commands it takes.
+references:
+    - https://attack.mitre.org/techniques/T1003/001/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.credential-access
+    - attack.t1003.001
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection_name:
+        - Image|endswith: '\mimikatz.exe'
+        - OriginalFileName: 'mimikatz.exe'
+    selection_modules:
+        CommandLine|contains:
+            - 'sekurlsa::'
+            - 'lsadump::'
+            - 'kerberos::ptt'
+            - 'privilege::debug'
+            - 'token::elevate'
+    condition: 1 of selection_*
+falsepositives:
+    - Authorized penetration tests
+level: critical

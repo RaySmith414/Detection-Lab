@@ -1,0 +1,58 @@
+title: Script Host or User Folder Binary Connecting to an External Address
+id: fc1eaf01-b8e6-4fba-8e0d-2f1531a8db2d
+status: test
+description: Detects a script host or a program in a user-writable folder opening a connection to a public address.
+references:
+    - https://attack.mitre.org/techniques/T1071/001/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.command-and-control
+    - attack.t1071.001
+logsource:
+    category: network_connection
+    product: windows
+detection:
+    selection_script_host:
+        Image|endswith:
+            - '\powershell.exe'
+            - '\pwsh.exe'
+            - '\mshta.exe'
+            - '\wscript.exe'
+            - '\cscript.exe'
+            - '\regsvr32.exe'
+            - '\rundll32.exe'
+            - '\certutil.exe'
+    selection_user_folder:
+        Image|contains:
+            - '\AppData\Local\Temp\'
+            - '\Users\Public\'
+            - '\ProgramData\'
+            - '\Downloads\'
+    filter_main_private:
+        DestinationIp|startswith:
+            - '10.'
+            - '192.168.'
+            - '172.16.'
+            - '172.17.'
+            - '172.18.'
+            - '172.19.'
+            - '172.20.'
+            - '172.21.'
+            - '172.22.'
+            - '172.23.'
+            - '172.24.'
+            - '172.25.'
+            - '172.26.'
+            - '172.27.'
+            - '172.28.'
+            - '172.29.'
+            - '172.30.'
+            - '172.31.'
+            - '127.'
+            - '169.254.'
+    condition: 1 of selection_* and not 1 of filter_main_*
+falsepositives:
+    - PowerShell modules and scripts that download updates
+    - Installers that run from a download folder
+level: medium

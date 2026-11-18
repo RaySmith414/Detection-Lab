@@ -1,0 +1,38 @@
+title: PowerShell Uploading a File Over HTTP
+id: 507c262e-1345-4142-b878-d6ca80ca3f89
+status: test
+description: Detects PowerShell web cmdlets sending a local file with POST or PUT.
+references:
+    - https://attack.mitre.org/techniques/T1048/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.exfiltration
+    - attack.t1048
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection_img:
+        - Image|endswith:
+              - '\powershell.exe'
+              - '\pwsh.exe'
+        - OriginalFileName:
+              - 'PowerShell.EXE'
+              - 'pwsh.dll'
+    selection_cmdlet:
+        CommandLine|contains:
+            - 'Invoke-WebRequest'
+            - 'Invoke-RestMethod'
+            - 'iwr '
+            - 'irm '
+    selection_method:
+        CommandLine|contains:
+            - '-Method POST'
+            - '-Method PUT'
+    selection_file:
+        CommandLine|contains: '-InFile'
+    condition: all of selection_*
+falsepositives:
+    - Scripts that publish build artifacts or reports to an internal web service
+level: medium

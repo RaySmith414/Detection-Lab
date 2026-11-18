@@ -1,0 +1,40 @@
+title: Script Host or Office Program Writes an Executable to a User Folder
+id: e7bcd3af-e758-437c-80c4-732c603bda68
+status: test
+description: Detects PowerShell, a script host or an Office program creating an executable file in a user-writable folder.
+references:
+    - https://attack.mitre.org/techniques/T1105/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.command-and-control
+    - attack.t1105
+logsource:
+    category: file_event
+    product: windows
+detection:
+    selection_writer:
+        Image|endswith:
+            - '\powershell.exe'
+            - '\pwsh.exe'
+            - '\wscript.exe'
+            - '\cscript.exe'
+            - '\mshta.exe'
+            - '\winword.exe'
+            - '\excel.exe'
+            - '\powerpnt.exe'
+    selection_type:
+        TargetFilename|endswith:
+            - '.exe'
+            - '.dll'
+            - '.scr'
+    selection_folder:
+        TargetFilename|contains:
+            - '\AppData\'
+            - '\Users\Public\'
+            - '\ProgramData\'
+            - '\Temp\'
+    condition: all of selection_*
+falsepositives:
+    - PowerShell based software deployment
+level: high

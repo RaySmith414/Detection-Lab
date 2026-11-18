@@ -1,7 +1,7 @@
 title: Setuid Bit Placed on a Shell or a File in a Temporary Folder
 id: 592a156a-3557-48d7-8031-8f6ff313d5e1
 status: test
-description: Detects chmod setting the setuid bit on a shell or on a file in a world-writable folder.
+description: Detects chmod setting the setuid bit on a shell or on a file in a folder that every user can write to.
 references:
     - https://attack.mitre.org/techniques/T1548/001/
 author: Rayshaun Smith

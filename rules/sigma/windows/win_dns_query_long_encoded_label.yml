@@ -1,0 +1,28 @@
+title: DNS Query With a Long Encoded First Label
+id: b5cdb5c5-e63d-4343-b6cd-c97f5e265d3b
+status: test
+description: Detects a DNS lookup whose first label is a long run of hex or base32 characters, as tunnelling tools produce.
+references:
+    - https://attack.mitre.org/techniques/T1071/004/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.command-and-control
+    - attack.t1071.004
+    - attack.exfiltration
+    - attack.t1048.003
+logsource:
+    category: dns_query
+    product: windows
+detection:
+    selection:
+        QueryName|re: '[0-9a-z]{16,}\..+'
+    filter_main_known_services:
+        QueryName|endswith:
+            - '.cloudfront.net'
+            - '.akamaihd.net'
+            - '.amazonaws.com'
+    condition: selection and not 1 of filter_main_*
+falsepositives:
+    - Content delivery and tracking domains with long generated host names
+level: medium

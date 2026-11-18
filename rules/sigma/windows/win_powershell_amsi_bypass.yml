@@ -1,0 +1,25 @@
+title: PowerShell AMSI Bypass Strings
+id: a91464d8-ed60-4ee1-b654-791defd2714c
+status: test
+description: Detects command lines that tamper with the Antimalware Scan Interface.
+references:
+    - https://attack.mitre.org/techniques/T1685/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.defense-impairment
+    - attack.t1685
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection:
+        CommandLine|contains:
+            - 'AmsiUtils'
+            - 'amsiInitFailed'
+            - 'AmsiScanBuffer'
+            - 'amsiContext'
+    condition: selection
+falsepositives:
+    - Security tools and tests that check for AMSI tampering
+level: high

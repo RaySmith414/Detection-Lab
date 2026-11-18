@@ -1,0 +1,30 @@
+title: Microsoft Defender Disabled Through the Registry
+id: 14b6859e-9eb3-43a8-aa86-f8800e921e97
+status: test
+description: Detects a registry value that switches off Microsoft Defender or one of its protections.
+references:
+    - https://attack.mitre.org/techniques/T1685/
+author: Rayshaun Smith
+date: 2026-11-18
+tags:
+    - attack.defense-impairment
+    - attack.t1685
+logsource:
+    category: registry_set
+    product: windows
+detection:
+    selection_key:
+        TargetObject|contains: '\Windows Defender\'
+    selection_value:
+        TargetObject|endswith:
+            - '\DisableAntiSpyware'
+            - '\DisableAntiVirus'
+            - '\DisableRealtimeMonitoring'
+            - '\DisableBehaviorMonitoring'
+            - '\DisableIOAVProtection'
+    selection_enabled:
+        Details: 'DWORD (0x00000001)'
+    condition: all of selection_*
+falsepositives:
+    - Another antivirus product taking over from Defender
+level: high
