@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Detection Lab Sysmon Configuration
+  Based on SwiftOnSecurity's sysmon-config with additions for lab training
+  Deploy this on Windows endpoints to generate rich security telemetry
+
+  Usage: sysmon.exe -accepteula -i sysmon-config.xml
+  Update: sysmon.exe -c sysmon-config.xml
+-->
+<Sysmon schemaversion="4.90">
+  <HashAlgorithms>SHA256,IMPHASH</HashAlgorithms>
+  <CheckRevocation>False</CheckRevocation>
+
+  <EventFiltering>
+
+    <!-- Event ID 1: Process Creation -->
+    <RuleGroup name="ProcessCreate" groupRelation="or">
+      <ProcessCreate onmatch="include">
+        <!-- Suspicious process names -->
+        <Image condition="contains any">mimikatz;psexec;procdump;lazagne;rubeus;covenant;sharphound;bloodhound</Image>
+        <!-- Living off the land binaries -->
+        <Image condition="end with">\cmd.exe</Image>
+        <Image condition="end with">\powershell.exe</Image>
+        <Image condition="end with">\pwsh.exe</Image>
+        <Image condition="end with">\wscript.exe</Image>
+        <Image condition="end with">\cscript.exe</Image>
+        <Image condition="end with">\mshta.exe</Image>
+        <Image condition="end with">\regsvr32.exe</Image>
+        <Image condition="end with">\rundll32.exe</Image>
+        <Image condition="end with">\certutil.exe</Image>
+        <Image condition="end with">\bitsadmin.exe</Image>
+        <Image condition="end with">\msiexec.exe</Image>
+        <Image condition="end with">\installutil.exe</Image>
+        <Image condition="end with">\schtasks.exe</Image>
+        <Image condition="end with">\at.exe</Image>
+        <Image condition="end with">\reg.exe</Image>
+        <Image condition="end with">\sc.exe</Image>
+        <Image condition="end with">\net.exe</Image>
+        <Image condition="end with">\net1.exe</Image>
+        <Image condition="end with">\netsh.exe</Image>
+        <Image condition="end with">\wmic.exe</Image>
+        <!-- Processes from temp/download locations -->
+        <Image condition="contains">\Temp\</Image>
+        <Image condition="contains">\Downloads\</Image>
+        <Image condition="contains">\AppData\Local\</Image>
+        <!-- Encoded command lines -->
+        <CommandLine condition="contains">-enc</CommandLine>
+        <CommandLine condition="contains">-encodedcommand</CommandLine>
+        <CommandLine condition="contains">FromBase64String</CommandLine>
+        <CommandLine condition="contains">DownloadString</CommandLine>
+        <CommandLine condition="contains">DownloadFile</CommandLine>
+        <CommandLine condition="contains">Invoke-Expression</CommandLine>
+        <CommandLine condition="contains">IEX</CommandLine>
+        <CommandLine condition="contains">Start-Process</CommandLine>
+        <!-- Office spawning processes -->
+        <ParentImage condition="end with">\WINWORD.EXE</ParentImage>
+        <ParentImage condition="end with">\EXCEL.EXE</ParentImage>
+        <ParentImage condition="end with">\POWERPNT.EXE</ParentImage>
+        <ParentImage condition="end with">\OUTLOOK.EXE</ParentImage>
+      </ProcessCreate>
+    </RuleGroup>
+
+    <!-- Event ID 3: Network Connection -->
+    <RuleGroup name="NetworkConnect" groupRelation="or">
+      <NetworkConnect onmatch="include">
+        <!-- Suspicious processes making network connections -->
+        <Image condition="end with">\powershell.exe</Image>
+        <Image condition="end with">\cmd.exe</Image>
+        <Image condition="end with">\rundll32.exe</Image>
+        <Image condition="end with">\regsvr32.exe</Image>
+        <Image condition="end with">\mshta.exe</Image>
+        <Image condition="end with">\certutil.exe</Image>
+        <Image condition="end with">\bitsadmin.exe</Image>
+        <Image condition="end with">\wscript.exe</Image>
+        <Image condition="end with">\cscript.exe</Image>
+        <!-- Suspicious destination ports -->
+        <DestinationPort condition="is">4444</DestinationPort>
+        <DestinationPort condition="is">1337</DestinationPort>
+        <DestinationPort condition="is">8080</DestinationPort>
+        <DestinationPort condition="is">8443</DestinationPort>
+        <!-- SMB connections (lateral movement) -->
+        <DestinationPort condition="is">445</DestinationPort>
+        <DestinationPort condition="is">135</DestinationPort>
+        <!-- Processes from suspicious locations -->
+        <Image condition="contains">\Temp\</Image>
+        <Image condition="contains">\Downloads\</Image>
+      </NetworkConnect>
+    </RuleGroup>
+
+    <!-- Event ID 7: Image Load (DLL) -->
+    <RuleGroup name="ImageLoad" groupRelation="or">
+      <ImageLoad onmatch="include">
+        <!-- CLR/PowerShell DLLs loading (script execution) -->
+        <ImageLoaded condition="end with">\clr.dll</ImageLoaded>
+        <ImageLoaded condition="end with">\clrjit.dll</ImageLoaded>
+        <ImageLoaded condition="end with">\System.Management.Automation.dll</ImageLoaded>
+        <!-- Suspicious DLL paths -->
+        <ImageLoaded condition="contains">\Temp\</ImageLoaded>
+        <ImageLoaded condition="contains">\Downloads\</ImageLoaded>
+        <ImageLoaded condition="contains">\AppData\Local\</ImageLoaded>
+      </ImageLoad>
+    </RuleGroup>
+
+    <!-- Event ID 8: CreateRemoteThread (injection) -->
+    <RuleGroup name="CreateRemoteThread" groupRelation="or">
+      <CreateRemoteThread onmatch="exclude">
+        <!-- Exclude known legitimate -->
+        <SourceImage condition="end with">\csrss.exe</SourceImage>
+        <SourceImage condition="end with">\lsass.exe</SourceImage>
+        <SourceImage condition="end with">\services.exe</SourceImage>
+        <SourceImage condition="end with">\svchost.exe</SourceImage>
+        <SourceImage condition="end with">\wininit.exe</SourceImage>
+      </CreateRemoteThread>
+    </RuleGroup>
+
+    <!-- Event ID 10: Process Access -->
+    <RuleGroup name="ProcessAccess" groupRelation="or">
+      <ProcessAccess onmatch="include">
+        <!-- LSASS access (credential dumping) -->
+        <TargetImage condition="end with">\lsass.exe</TargetImage>
+      </ProcessAccess>
+      <ProcessAccess onmatch="exclude">
+        <!-- Exclude legitimate LSASS access -->
+        <SourceImage condition="end with">\lsass.exe</SourceImage>
+        <SourceImage condition="end with">\csrss.exe</SourceImage>
+        <SourceImage condition="end with">\wininit.exe</SourceImage>
+        <SourceImage condition="end with">\MsMpEng.exe</SourceImage>
+      </ProcessAccess>
+    </RuleGroup>
+
+    <!-- Event ID 11: File Create -->
+    <RuleGroup name="FileCreate" groupRelation="or">
+      <FileCreate onmatch="include">
+        <!-- Executable creation -->
+        <TargetFilename condition="end with">.exe</TargetFilename>
+        <TargetFilename condition="end with">.dll</TargetFilename>
+        <TargetFilename condition="end with">.sys</TargetFilename>
+        <TargetFilename condition="end with">.ps1</TargetFilename>
+        <TargetFilename condition="end with">.bat</TargetFilename>
+        <TargetFilename condition="end with">.cmd</TargetFilename>
+        <TargetFilename condition="end with">.vbs</TargetFilename>
+        <TargetFilename condition="end with">.js</TargetFilename>
+        <TargetFilename condition="end with">.hta</TargetFilename>
+        <!-- Suspicious locations -->
+        <TargetFilename condition="contains">\Temp\</TargetFilename>
+        <TargetFilename condition="contains">\ProgramData\</TargetFilename>
+        <TargetFilename condition="contains">\AppData\Local\Temp\</TargetFilename>
+        <!-- Startup locations -->
+        <TargetFilename condition="contains">\Start Menu\Programs\Startup\</TargetFilename>
+      </FileCreate>
+    </RuleGroup>
+
+    <!-- Event ID 12,13,14: Registry Events -->
+    <RuleGroup name="RegistryEvent" groupRelation="or">
+      <RegistryEvent onmatch="include">
+        <!-- Run keys (persistence) -->
+        <TargetObject condition="contains">\CurrentVersion\Run</TargetObject>
+        <TargetObject condition="contains">\CurrentVersion\RunOnce</TargetObject>
+        <!-- Services (persistence) -->
+        <TargetObject condition="contains">\Services\</TargetObject>
+        <!-- Image File Execution Options (hijacking) -->
+        <TargetObject condition="contains">\Image File Execution Options\</TargetObject>
+        <!-- AppInit DLLs -->
+        <TargetObject condition="contains">\AppInit_DLLs</TargetObject>
+        <!-- Windows Defender tampering -->
+        <TargetObject condition="contains">\Windows Defender\</TargetObject>
+        <!-- UAC bypass -->
+        <TargetObject condition="contains">\shell\open\command</TargetObject>
+      </RegistryEvent>
+    </RuleGroup>
+
+    <!-- Event ID 15: File Create Stream Hash -->
+    <RuleGroup name="FileCreateStreamHash" groupRelation="or">
+      <FileCreateStreamHash onmatch="include">
+        <!-- Files with Zone.Identifier (downloaded from internet) -->
+        <TargetFilename condition="contains">Zone.Identifier</TargetFilename>
+      </FileCreateStreamHash>
+    </RuleGroup>
+
+    <!-- Event ID 17,18: Pipe Events -->
+    <RuleGroup name="PipeEvent" groupRelation="or">
+      <PipeEvent onmatch="include">
+        <!-- Suspicious pipe names (Cobalt Strike, Meterpreter, etc.) -->
+        <PipeName condition="contains">meterpreter</PipeName>
+        <PipeName condition="contains">msagent</PipeName>
+        <PipeName condition="contains">MSSE-</PipeName>
+        <PipeName condition="contains">-server</PipeName>
+        <PipeName condition="contains">postex</PipeName>
+        <PipeName condition="contains">beacon</PipeName>
+      </PipeEvent>
+    </RuleGroup>
+
+    <!-- Event ID 22: DNS Query -->
+    <RuleGroup name="DnsQuery" groupRelation="or">
+      <DnsQuery onmatch="include">
+        <!-- Include all DNS for detection -->
+        <QueryName condition="end with">.com</QueryName>
+        <QueryName condition="end with">.net</QueryName>
+        <QueryName condition="end with">.org</QueryName>
+        <QueryName condition="end with">.io</QueryName>
+        <QueryName condition="end with">.ru</QueryName>
+        <QueryName condition="end with">.cn</QueryName>
+      </DnsQuery>
+      <DnsQuery onmatch="exclude">
+        <!-- Exclude noisy legitimate queries -->
+        <QueryName condition="end with">.microsoft.com</QueryName>
+        <QueryName condition="end with">.windows.com</QueryName>
+        <QueryName condition="end with">.windowsupdate.com</QueryName>
+        <QueryName condition="end with">.office.com</QueryName>
+      </DnsQuery>
+    </RuleGroup>
+
+    <!-- Event ID 23: File Delete -->
+    <RuleGroup name="FileDelete" groupRelation="or">
+      <FileDelete onmatch="include">
+        <!-- Log deletion activities -->
+        <TargetFilename condition="contains">\Windows\System32\winevt\Logs\</TargetFilename>
+        <TargetFilename condition="end with">.evtx</TargetFilename>
+      </FileDelete>
+    </RuleGroup>
+
+    <!-- Event ID 2: File creation time changed. Excluding nothing logs every change. -->
+    <RuleGroup name="FileCreateTime" groupRelation="or">
+      <FileCreateTime onmatch="exclude">
+      </FileCreateTime>
+    </RuleGroup>
+
+    <!-- Event IDs 19, 20 and 21: WMI event filters, consumers and bindings -->
+    <RuleGroup name="WmiEvent" groupRelation="or">
+      <WmiEvent onmatch="exclude">
+      </WmiEvent>
+    </RuleGroup>
+
+  </EventFiltering>
+</Sysmon>

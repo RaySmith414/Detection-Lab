@@ -1,0 +1,282 @@
+# Detection Lab Attack Scenarios Configuration
+# Based on MITRE ATT&CK Framework
+# Use these scenarios to practice detection and response
+
+---
+scenarios:
+
+  # ============================================
+  # Scenario 1: Phishing to Domain Compromise
+  # ============================================
+  - name: phishing_to_compromise
+    description: |
+      Complete attack chain from initial phishing email to domain compromise.
+      Mimics a typical APT attack pattern.
+    difficulty: advanced
+    estimated_duration: 30m
+    mitre_tactics:
+      - TA0001 - Initial Access
+      - TA0002 - Execution
+      - TA0003 - Persistence
+      - TA0004 - Privilege Escalation
+      - TA0006 - Credential Access
+      - TA0008 - Lateral Movement
+      - TA0010 - Exfiltration
+    attack_chain:
+      - step: 1
+        name: "Phishing Email Delivery"
+        technique: T1566.001
+        description: "Malicious Word document delivered via email"
+        indicators:
+          - "Word document with macros opened"
+          - "Sysmon Event ID 1 - WINWORD.EXE spawning child process"
+
+      - step: 2
+        name: "Macro Execution"
+        technique: T1204.002
+        description: "User enables macros, triggering PowerShell"
+        indicators:
+          - "WINWORD.EXE spawning powershell.exe"
+          - "Encoded PowerShell command"
+          - "Network connection to external IP"
+
+      - step: 3
+        name: "Payload Download"
+        technique: T1105
+        description: "Malware downloaded from C2 server"
+        indicators:
+          - "PowerShell making HTTP request"
+          - "File created in Temp directory"
+          - "Suspicious DNS queries"
+
+      - step: 4
+        name: "Persistence Establishment"
+        technique: T1547.001
+        description: "Registry Run key created for persistence"
+        indicators:
+          - "Sysmon Event ID 13 - Registry modification"
+          - "Run key pointing to malware"
+
+      - step: 5
+        name: "Credential Dumping"
+        technique: T1003.001
+        description: "LSASS memory accessed for credentials"
+        indicators:
+          - "Sysmon Event ID 10 - LSASS access"
+          - "Suspicious GrantedAccess values"
+
+      - step: 6
+        name: "Lateral Movement"
+        technique: T1021.002
+        description: "Movement to other systems using stolen credentials"
+        indicators:
+          - "SMB connections to multiple hosts"
+          - "Remote service creation"
+          - "PsExec service installation"
+
+      - step: 7
+        name: "Data Exfiltration"
+        technique: T1048.003
+        description: "Sensitive data exfiltrated via DNS"
+        indicators:
+          - "Unusually long DNS queries"
+          - "High volume of DNS traffic"
+          - "Base64-like subdomains"
+
+    detection_queries:
+      - name: "Initial Compromise Detection"
+        query: |
+          EventID:1 AND ParentImage:*WINWORD.EXE AND
+          (Image:*powershell.exe OR Image:*cmd.exe)
+
+      - name: "Credential Dumping Detection"
+        query: |
+          EventID:10 AND TargetImage:*lsass.exe AND
+          NOT SourceImage:*\\Windows\\System32\\*
+
+  # ============================================
+  # Scenario 2: Ransomware Attack
+  # ============================================
+  - name: ransomware_attack
+    description: |
+      Simulates a ransomware attack including initial access,
+      lateral spread and encryption activities.
+    difficulty: intermediate
+    estimated_duration: 20m
+    mitre_tactics:
+      - TA0001 - Initial Access
+      - TA0002 - Execution
+      - TA0008 - Lateral Movement
+      - TA0040 - Impact
+    attack_chain:
+      - step: 1
+        name: "Initial Compromise via RDP"
+        technique: T1110.001
+        description: "RDP brute force to gain initial access"
+        indicators:
+          - "Multiple Event ID 4625 (Failed Logins)"
+          - "Successful Event ID 4624 after failures"
+          - "LogonType 10 (RemoteInteractive)"
+
+      - step: 2
+        name: "Discovery"
+        technique: T1083
+        description: "Enumeration of file shares and systems"
+        indicators:
+          - "net view commands"
+          - "SMB enumeration"
+          - "dir /s commands"
+
+      - step: 3
+        name: "Lateral Movement"
+        technique: T1570
+        description: "Spreading ransomware to other systems"
+        indicators:
+          - "File copies to admin shares"
+          - "WMI remote execution"
+          - "PsExec usage"
+
+      - step: 4
+        name: "Shadow Copy Deletion"
+        technique: T1490
+        description: "Deleting backups before encryption"
+        indicators:
+          - "vssadmin.exe delete shadows"
+          - "wmic shadowcopy delete"
+
+      - step: 5
+        name: "Encryption"
+        technique: T1486
+        description: "Mass file encryption"
+        indicators:
+          - "High volume of file modifications"
+          - "Creation of ransom notes"
+
+  # ============================================
+  # Scenario 3: Insider Threat
+  # ============================================
+  - name: insider_threat
+    description: |
+      Simulates malicious insider activity including
+      unauthorized access and data theft.
+    difficulty: intermediate
+    estimated_duration: 15m
+    mitre_tactics:
+      - TA0009 - Collection
+      - TA0010 - Exfiltration
+    attack_chain:
+      - step: 1
+        name: "After-Hours Access"
+        technique: T1078
+        description: "Login during unusual hours"
+        indicators:
+          - "Successful logins outside business hours"
+          - "Access from unusual locations"
+
+      - step: 2
+        name: "Sensitive Data Access"
+        technique: T1005
+        description: "Accessing sensitive files"
+        indicators:
+          - "File access to HR/Finance shares"
+          - "Bulk file access patterns"
+
+      - step: 3
+        name: "Data Staging"
+        technique: T1074
+        description: "Collecting data before exfiltration"
+        indicators:
+          - "Archive creation (7z, zip, rar)"
+          - "Large files created in temp locations"
+
+      - step: 4
+        name: "Exfiltration"
+        technique: T1567
+        description: "Uploading data to cloud storage"
+        indicators:
+          - "Connections to cloud storage services"
+          - "Large outbound data transfers"
+
+  # ============================================
+  # Scenario 4: Supply Chain Attack
+  # ============================================
+  - name: supply_chain_attack
+    description: |
+      Simulates compromise via trusted software update
+      mechanism (similar to SolarWinds attack).
+    difficulty: advanced
+    estimated_duration: 25m
+    mitre_tactics:
+      - TA0001 - Initial Access
+      - TA0003 - Persistence
+      - TA0011 - Command and Control
+    attack_chain:
+      - step: 1
+        name: "Trojanized Update"
+        technique: T1195.002
+        description: "Malicious code in legitimate software"
+        indicators:
+          - "Legitimate software making unusual connections"
+          - "Unexpected child processes from trusted apps"
+
+      - step: 2
+        name: "Delayed Execution"
+        technique: T1497
+        description: "Malware waits before activating"
+        indicators:
+          - "Scheduled task created by trusted software"
+          - "Time-based triggers"
+
+      - step: 3
+        name: "C2 Communication"
+        technique: T1071.001
+        description: "Blending C2 with legitimate traffic"
+        indicators:
+          - "DNS queries to unusual domains"
+          - "HTTPS traffic to rare destinations"
+
+# ============================================
+# Detection Exercises
+# ============================================
+exercises:
+  # Each query is EQL. `python -m detlab siem exercises` runs them against the scenario
+  # events in Elasticsearch. CI fails when one of them finds nothing.
+  - name: "Hunt for Initial Access"
+    objective: "Identify the initial compromise vector"
+    hints:
+      - "Look for Office applications spawning suspicious processes"
+      - "Check for encoded PowerShell commands"
+      - "Review network connections from unusual processes"
+    solution_queries:
+      - 'any where event.code == "1" and process.parent.executable : "*Office*" and process.executable : "*powershell.exe"'
+      - 'any where event.code == "1" and process.command_line : "* -enc *"'
+
+  - name: "Detect Persistence Mechanisms"
+    objective: "Find all persistence mechanisms established"
+    hints:
+      - "Check registry Run keys"
+      - "Look for new scheduled tasks"
+      - "Review service installations"
+    solution_queries:
+      - 'any where event.code == "13" and registry.path : "*\\CurrentVersion\\Run\\*"'
+      - 'any where event.code in ("4698", "7045")'
+
+  - name: "Track Lateral Movement"
+    objective: "Map the attacker's movement through the network"
+    hints:
+      - "Look for SMB connections to multiple hosts"
+      - "Check for remote service installations"
+      - "Review logon events across systems"
+    solution_queries:
+      - 'any where event.code == "3" and destination.port == "445"'
+      - 'any where event.code == "7045" and winlog.event_data.ServiceName == "PSEXESVC"'
+
+  - name: "Identify Data Exfiltration"
+    objective: "Detect and quantify data exfiltration attempts"
+    hints:
+      - "Look for unusual DNS query patterns"
+      - "Check for large outbound transfers"
+      - "Review archive tool usage"
+    solution_queries:
+      - 'any where event.code == "22" and dns.question.name : "*.data.evil-cdn.example.org"'
+      - 'any where event.code == "1" and process.executable : ("*\\7z.exe", "*\\rar.exe")'
