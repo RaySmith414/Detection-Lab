@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from detlab import pcaps, samples
+from detlab import exercises, pcaps, samples, scenarios
 from detlab.rules import ROOT, load_rules
 from detlab.suricata import load_suricata_rules
 
@@ -19,6 +19,11 @@ MARKDOWN = sorted(path for path in ROOT.rglob("*.md")
 
 def test_every_image_is_pinned_to_a_version():
     for name, service in COMPOSE["services"].items():
+        if "build" in service:
+            dockerfile = (ROOT / "stack" / service["build"] / "Dockerfile").read_text(encoding="utf-8")
+            image = re.search(r"^FROM (\S+)", dockerfile, re.MULTILINE).group(1)
+            assert re.search(r":\d+\.\d+\.\d+(-[a-z]+)?$", image), f"{name}: base image {image} is not pinned"
+            continue
         image = service["image"]
         assert re.search(r":\d+\.\d+\.\d+$", image), f"{name}: {image} is not pinned to a full version"
 
@@ -45,7 +50,20 @@ def test_the_suricata_container_has_no_network_and_reads_only():
 
 def test_env_file_and_output_are_ignored_by_git():
     ignored = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
-    assert "stack/.env" in ignored and "stack/output/" in ignored
+    assert "stack/.env" in ignored and "stack/output/" in ignored and "stack/logs/" in ignored
+
+
+def test_the_generators_run_without_network_and_as_the_lab_user():
+    for name in ("log-generator", "attack-simulator"):
+        service = COMPOSE["services"][name]
+        assert service["network_mode"] == "none"
+        assert service["profiles"] == ["live"]
+        assert service["user"].startswith("${LAB_UID")
+
+
+def test_logstash_reads_the_logs_and_cannot_change_them():
+    volumes = COMPOSE["services"]["logstash"]["volumes"]
+    assert "./logs:/var/log/detection-lab:ro" in volumes
 
 
 def test_init_script_writes_every_variable_the_compose_file_needs(tmp_path):
@@ -73,26 +91,36 @@ def test_readme_numbers_match_the_repository():
     network_rules = load_suricata_rules()
     attack_events, benign_events = samples.build()
     captures = pcaps.build()
+    documents = scenarios.build()
     windows = sum(1 for rule in rules if rule.product == "windows")
     linux = len(rules) - windows
+    thresholds = sum(1 for rule in rules if rule.is_threshold)
+    fired = set().union(*scenarios.fired(rules, documents).values())
     for claim in (
+        f"{len(rules) + len(network_rules)} detection rules",
         f"{len(rules)} Sigma rules",
         f"{len(network_rules)} Suricata rules",
         f"{windows} for Windows",
         f"{linux} for Linux",
+        f"{thresholds} of them are threshold rules",
+        f"{linux} for Linux (process events and the auth log)",
         f"{len(attack_events)} attack events",
         f"{len(benign_events)} benign events",
         f"{len(captures) - 1} attack captures",
         f"all {len(rules)} Sigma rules",
-        f"Sigma rules: {len(rules)} rules, {len(attack_events)} attack events all detected, "
-        f"{len(benign_events)} benign events all quiet",
+        f"sigma/windows/            # {windows} rules",
+        f"sigma/linux/              # {linux} rules",
+        f"Sigma rules: {len(rules)} rules ({thresholds} of them threshold rules), {len(attack_events)} attack events "
+        f"all detected, {len(benign_events)} benign events all quiet",
+        f"Attack scenarios: {len(scenarios.ORDER)} scenarios with {len(documents)} events, {len(fired)} rules fire "
+        f"as expected",
         f"Suricata rules: {len(network_rules)} rules, {len(captures) - 1} attack captures all detected",
     ):
         assert claim in README, f"README no longer says: {claim}"
 
 
 def test_readme_versions_match_the_stack():
-    for name in ("elasticsearch", "kibana"):
+    for name in ("elasticsearch", "logstash", "kibana"):
         version = COMPOSE["services"][name]["image"].split(":")[1]
         assert f"{name.capitalize()} {version}" in README
 
@@ -132,4 +160,48 @@ def test_guide_examples_follow_the_conventions_they_describe():
     assert rule["logsource"] == {"category": "process_creation", "product": "windows"}
     used = {rule.sid for rule in load_suricata_rules()}
     example_sid = int(re.search(r"sid:(\d+);", guide).group(1))
-    assert 9000001 <= example_sid <= 9000099 and example_sid not in used
+    assert 1000001 <= example_sid <= 1000099 and example_sid not in used
+
+
+def test_sysmon_configuration_logs_every_event_type_the_rules_read():
+    import xml.etree.ElementTree as ElementTree
+
+    root = ElementTree.parse(ROOT / "configs" / "sysmon-config.xml").getroot()  # noqa: S314 - our own file
+    assert root.tag == "Sysmon" and root.attrib["schemaversion"]
+    enabled = {child.tag for group in root.iter("RuleGroup") for child in group}
+    needed = {"process_creation": "ProcessCreate", "network_connection": "NetworkConnect",
+              "file_event": "FileCreate", "registry_set": "RegistryEvent", "dns_query": "DnsQuery",
+              "process_access": "ProcessAccess", "create_remote_thread": "CreateRemoteThread",
+              "file_change": "FileCreateTime", "wmi_event": "WmiEvent"}
+    used = {rule.category for rule in load_rules() if rule.product == "windows"} - {"security", "system"}
+    assert used <= set(needed), f"add the Sysmon event type for {sorted(used - set(needed))}"
+    missing = sorted(needed[category] for category in used if needed[category] not in enabled)
+    assert not missing, f"configs/sysmon-config.xml does not log {missing}"
+
+
+def test_exercises_have_hints_and_queries_and_valid_techniques():
+    from detlab import attack
+
+    data = exercises.load()
+    assert len(data["exercises"]) == 4 and len(data["scenarios"]) == 4
+    for exercise in data["exercises"]:
+        assert exercise["hints"] and exercise["solution_queries"]
+        assert all(query.startswith("any where ") for query in exercise["solution_queries"])
+    assert len(exercises.queries()) == 8
+    text = exercises.report()
+    assert "## Hunting exercises" in text and "## Attack chains to read through" in text
+    known = set(attack.TACTIC_ORDER)
+    assert known, "the reference data is loaded"
+    for scenario in data["scenarios"]:
+        for step in scenario["attack_chain"]:
+            assert step["technique"].startswith("T") and step["indicators"]
+
+
+def test_exercise_queries_only_use_fields_the_index_maps():
+    from detlab.fields import queried_fields
+
+    known = queried_fields()
+    for _name, query in exercises.queries():
+        outside_strings = re.sub(r'"[^"]*"', '""', query)
+        for field in re.findall(r"\b([a-z_]+(?:\.[A-Za-z_]+)+)\b", outside_strings):
+            assert field in known, f"{field} in: {query}"

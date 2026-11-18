@@ -85,21 +85,42 @@ jobs:
         run: |
           python -m detlab siem load | tee load.txt
           grep -q '^detlab-events: [1-9]' load.txt
+          grep -q '^detlab-scenario-events: [1-9]' load.txt
           grep -q '^detlab-network-alerts: [1-9]' load.txt
       - name: Run every rule as EQL and compare the hits
         run: python -m detlab siem detect
-      - name: Create the Kibana data views
+      - name: The solution queries of the exercises find events
+        run: python -m detlab siem exercises
+      - name: Play the attack scenarios through Logstash
+        run: |
+          SIMULATOR_SEED=7 SIMULATOR_FAST=1 SIMULATOR_START_TIME=2026-11-10T10:00:00 LOG_DIR=stack/logs \
+            python attack-simulator/simulator.py all
+          python -m detlab siem hunt --wait 185 --expect-scenarios
+      - name: Background telemetry from the log generator through Logstash
+        run: |
+          LOG_DIR=stack/logs LOG_GENERATOR_SEED=3 LOG_GENERATOR_ROUNDS=200 python log-generator/generator.py > /dev/null
+          python -m detlab siem hunt --wait "$(stack/count-log-lines.sh)" --expect-auth-log stack/logs/linux/auth.log
+      - name: The generators as containers
+        run: |
+          (cd stack && docker compose --profile live build --quiet)
+          (cd stack && docker compose --profile live run --rm -e SIMULATOR_FAST=1 attack-simulator python simulator.py persistence)
+          (cd stack && docker compose --profile live up -d log-generator && sleep 20 && docker compose --profile live stop log-generator)
+          test "$(docker inspect -f '{{.State.ExitCode}}' "$(cd stack && docker compose --profile live ps -aq log-generator)")" = 0
+          python -m detlab siem hunt --wait "$(stack/count-log-lines.sh)" --expect-auth-log stack/logs/linux/auth.log
+      - name: Create the Kibana data views and import the dashboard
         run: python -m detlab siem kibana
       - name: The indices hold what was loaded
         run: |
           set -a; . stack/.env; set +a
-          for index in detlab-events detlab-alerts detlab-network-alerts; do
+          for index in detlab-events detlab-scenario-events detlab-alerts detlab-network-alerts detlab-live-events detlab-live-alerts; do
             count="$(curl -fsS -u "elastic:${ELASTIC_PASSWORD}" "http://127.0.0.1:9200/${index}/_count" | python -c 'import json,sys; print(json.load(sys.stdin)["count"])')"
             echo "${index}: ${count}"
             test "${count}" -gt 0
           done
           curl -fsS -u "elastic:${ELASTIC_PASSWORD}" http://127.0.0.1:5601/api/data_views \
-            | python -c 'import json,sys; names=sorted(v["title"] for v in json.load(sys.stdin)["data_view"]); print(names); assert names == ["detlab-alerts", "detlab-events", "detlab-network-alerts"]'
+            | python -c 'import json,sys; names=sorted(v["title"] for v in json.load(sys.stdin)["data_view"]); print(names); assert names == ["detlab-alerts", "detlab-events", "detlab-live-alerts", "detlab-live-events", "detlab-network-alerts", "detlab-scenario-events"]'
+          curl -fsS -u "elastic:${ELASTIC_PASSWORD}" http://127.0.0.1:5601/api/saved_objects/dashboard/detection-lab-dashboard \
+            | python -c 'import json,sys; print(json.load(sys.stdin)["attributes"]["title"])'
       - name: Resource use
         if: always()
         run: |
@@ -116,7 +137,7 @@ jobs:
       - name: Stop the stack
         if: always()
         working-directory: stack
-        run: docker compose down -v
+        run: docker compose --profile live down -v
       - name: Nothing is left behind
         run: |
           docker ps -a --format '{{.Names}} | {{.Image}} | {{.Status}}'
